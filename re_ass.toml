@@ -1,0 +1,22 @@
+[vault]
+root = "obsidian_vault"
+daily_dir = "Daily"
+papers_dir = "Papers"
+weekly_archive_dir = "Weekly_Archive"
+templates_dir = "Templates"
+preferences_file = "re-ass-preferences.md"
+weekly_note_file = "this-weeks-arxiv-papers.md"
+weekly_template_file = "weekly-arxiv-template.md"
+
+[arxiv]
+max_papers = 3
+fetch_window_hours = 24
+fallback_window_hours = 168
+max_results = 200
+default_categories = ["astro-ph.CO"]
+
+[llm]
+enabled = false
+command_prefix = ["claude", "-p"]
+timeout_seconds = 900
+allow_local_paper_note_fallback = true

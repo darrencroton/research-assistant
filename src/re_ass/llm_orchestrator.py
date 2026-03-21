@@ -53,7 +53,7 @@ class LlmOrchestrator:
 
         if self._is_command_available():
             before_state = {path.resolve(): path.stat().st_mtime_ns for path in papers_dir.glob("*.md")}
-            prompt = f"Use summarise-paper skill to summarise {paper.arxiv_url} and write to {papers_dir}"
+            prompt = f"Use /summarise-paper skill to summarise {paper.arxiv_url} and write to {papers_dir}"
             try:
                 self._run_prompt(prompt)
                 detected_path = self._detect_created_note(papers_dir, before_state, paper, expected_note_path)

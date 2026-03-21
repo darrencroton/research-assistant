@@ -35,9 +35,12 @@ def test_process_paper_falls_back_when_command_is_unavailable(tmp_path: Path) ->
 
 
 def test_process_paper_uses_llm_output_when_command_succeeds(tmp_path: Path) -> None:
+    seen_prompts: list[str] = []
+
     def fake_runner(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         prompt = str(command[-1])
-        if prompt.startswith("Use summarise-paper skill"):
+        seen_prompts.append(prompt)
+        if prompt.startswith("Use /summarise-paper skill"):
             note_path = tmp_path / "LLM Generated Note.md"
             note_path.write_text("# LLM Generated Note\n", encoding="utf-8")
             return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
@@ -57,3 +60,4 @@ def test_process_paper_uses_llm_output_when_command_succeeds(tmp_path: Path) -> 
 
     assert processed.note_name == "LLM Generated Note"
     assert processed.micro_summary == "Short LLM summary."
+    assert any(prompt.startswith("Use /summarise-paper skill") for prompt in seen_prompts)
