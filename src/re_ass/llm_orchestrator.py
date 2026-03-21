@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from datetime import timezone
 import logging
 from pathlib import Path
 import re
-import shutil
-import subprocess
 
 from re_ass.models import ArxivPaper, ProcessedPaper, sanitize_note_name
+from re_ass.paper_summariser import PaperSummariser, PaperSummariserError
+from re_ass.paper_summariser.providers import create_provider
+from re_ass.paper_summariser.providers.base import Provider
+from re_ass.settings import LlmConfig
 
 
 LOGGER = logging.getLogger(__name__)
@@ -16,24 +16,33 @@ _PROMPT_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
 
 
 class LlmCommandError(RuntimeError):
-    """Raised when the configured LLM CLI returns a failure."""
+    """Raised when the configured LLM provider returns a failure."""
 
 
 class LlmOrchestrator:
     def __init__(
         self,
         *,
-        command_prefix: Sequence[str],
-        timeout_seconds: int,
-        enabled: bool,
-        allow_local_paper_note_fallback: bool,
-        runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+        config: LlmConfig,
+        provider: Provider | None = None,
+        paper_summariser: PaperSummariser | None = None,
     ) -> None:
-        self.command_prefix = tuple(command_prefix)
-        self.timeout_seconds = timeout_seconds
-        self.enabled = enabled
-        self.allow_local_paper_note_fallback = allow_local_paper_note_fallback
-        self.runner = runner or subprocess.run
+        self.config = config
+        self.provider = provider
+
+        if self.config.enabled and self.provider is None:
+            self.provider = create_provider(
+                self.config.mode,
+                self.config.provider,
+                config=self.config.provider_config(),
+            )
+
+        if paper_summariser is not None:
+            self.paper_summariser = paper_summariser
+        elif self.provider is not None:
+            self.paper_summariser = PaperSummariser(provider=self.provider, config=self.config)
+        else:
+            self.paper_summariser = None
 
     def process_paper(self, paper: ArxivPaper, papers_dir: Path) -> ProcessedPaper:
         note_path = self.ensure_paper_note(paper, papers_dir)
@@ -51,38 +60,28 @@ class LlmOrchestrator:
         if expected_note_path.exists():
             return expected_note_path
 
-        if self._is_command_available():
-            before_state = {path.resolve(): path.stat().st_mtime_ns for path in papers_dir.glob("*.md")}
-            prompt = f"Use /summarise-paper skill to summarise {paper.arxiv_url} and write to {papers_dir}"
+        if self.paper_summariser is not None:
             try:
-                response = self._run_prompt(prompt)
-                detected_path = self._detect_created_note(papers_dir, before_state, paper, expected_note_path)
-                if detected_path is not None:
-                    return detected_path
-                LOGGER.warning(
-                    "Paper note command completed without creating a note for %s. CLI response: %s",
-                    paper.title,
-                    self._truncate_words(self._clean_summary(response), limit=40) or "<empty>",
-                )
-            except LlmCommandError as error:
+                summary = self.paper_summariser.summarise_paper(paper)
+                expected_note_path.write_text(summary.note_content, encoding="utf-8")
+                return expected_note_path
+            except PaperSummariserError as error:
                 LOGGER.warning("Paper note generation failed for %s: %s", paper.title, error)
 
-        if not self.allow_local_paper_note_fallback:
+        if not self.config.allow_local_paper_note_fallback:
             raise LlmCommandError(f"Unable to create paper note for {paper.title}.")
 
         self._write_fallback_paper_note(expected_note_path, paper)
         return expected_note_path
 
     def generate_micro_summary(self, paper: ArxivPaper) -> str:
-        if self._is_command_available():
-            prompt = (
-                "Summarise the following arXiv abstract in 1-2 sentences. "
-                "Return plain text only.\n"
-                f"Title: {paper.title}\n"
-                f"Abstract: {paper.summary}"
-            )
+        if self.provider is not None:
             try:
-                response = self._run_prompt(prompt)
+                response = self._run_text_prompt(
+                    "Summarise the following arXiv abstract in 1-2 sentences. Return plain text only.",
+                    f"Title: {paper.title}\nAbstract: {paper.summary}",
+                    max_tokens=min(self.config.max_output_tokens, 512),
+                )
                 cleaned = self._clean_summary(response)
                 if cleaned:
                     return cleaned
@@ -91,17 +90,15 @@ class LlmOrchestrator:
 
         return self._fallback_micro_summary(paper.summary)
 
-    def generate_weekly_synthesis(self, existing_synthesis: str, papers: Sequence[ProcessedPaper]) -> str:
-        if self._is_command_available():
+    def generate_weekly_synthesis(self, existing_synthesis: str, papers: list[ProcessedPaper]) -> str:
+        if self.provider is not None:
             bullet_summaries = "\n".join(f"- {paper.micro_summary}" for paper in papers)
-            prompt = (
-                "Update this weekly synthesis incorporating these new papers. "
-                "Max 100 words. Return plain text only.\n"
-                f"Current synthesis:\n{existing_synthesis}\n\n"
-                f"New paper summaries:\n{bullet_summaries}"
-            )
             try:
-                response = self._run_prompt(prompt)
+                response = self._run_text_prompt(
+                    "Update this weekly synthesis incorporating these new papers. Max 100 words. Return plain text only.",
+                    f"Current synthesis:\n{existing_synthesis}\n\nNew paper summaries:\n{bullet_summaries}",
+                    max_tokens=min(self.config.max_output_tokens, 512),
+                )
                 cleaned = self._truncate_words(self._clean_summary(response), limit=100)
                 if cleaned:
                     return cleaned
@@ -110,60 +107,22 @@ class LlmOrchestrator:
 
         return self._fallback_weekly_synthesis(existing_synthesis, papers)
 
-    def _is_command_available(self) -> bool:
-        if not self.enabled:
-            return False
-        return shutil.which(self.command_prefix[0]) is not None
-
-    def _run_prompt(self, prompt: str) -> str:
-        command = [*self.command_prefix, prompt]
+    def _run_text_prompt(self, system_prompt: str, user_prompt: str, *, max_tokens: int) -> str:
+        if self.provider is None:
+            raise LlmCommandError("No LLM provider configured.")
         try:
-            result = self.runner(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as error:
-            raise LlmCommandError(f"Command timed out after {self.timeout_seconds} seconds.") from error
-        if result.returncode != 0:
-            stderr = (result.stderr or "").strip()
-            raise LlmCommandError(stderr or f"Command failed with exit code {result.returncode}.")
-        return (result.stdout or "").strip()
-
-    def _detect_created_note(
-        self,
-        papers_dir: Path,
-        before_state: dict[Path, int],
-        paper: ArxivPaper,
-        expected_note_path: Path,
-    ) -> Path | None:
-        if expected_note_path.exists():
-            return expected_note_path
-
-        current_files = list(papers_dir.glob("*.md"))
-        changed_files = [
-            path
-            for path in current_files
-            if path.resolve() not in before_state
-            or path.stat().st_mtime_ns > before_state[path.resolve()]
-        ]
-        if len(changed_files) == 1:
-            return changed_files[0]
-
-        matching_titles = [
-            path
-            for path in current_files
-            if sanitize_note_name(path.stem).casefold() == sanitize_note_name(paper.title).casefold()
-        ]
-        if len(matching_titles) == 1:
-            return matching_titles[0]
-
-        return None
+            return self.provider.process_document(
+                content="",
+                is_pdf=False,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=max_tokens,
+            ).strip()
+        except Exception as error:
+            raise LlmCommandError(str(error)) from error
 
     def _write_fallback_paper_note(self, note_path: Path, paper: ArxivPaper) -> None:
-        published_date = paper.published.astimezone(timezone.utc).date().isoformat()
+        published_date = paper.published.date().isoformat()
         content = (
             f"# {paper.title}\n\n"
             f"- ArXiv: [{paper.arxiv_url}]({paper.arxiv_url})\n"
@@ -182,7 +141,7 @@ class LlmOrchestrator:
         candidate = " ".join(sentences[:2]) if sentences else abstract.strip()
         return self._truncate_words(candidate, limit=45)
 
-    def _fallback_weekly_synthesis(self, existing_synthesis: str, papers: Sequence[ProcessedPaper]) -> str:
+    def _fallback_weekly_synthesis(self, existing_synthesis: str, papers: list[ProcessedPaper]) -> str:
         summaries = [paper.micro_summary.rstrip(".") for paper in papers if paper.micro_summary.strip()]
         if not summaries:
             return self._truncate_words(existing_synthesis.strip(), limit=100)

@@ -1,10 +1,41 @@
+from datetime import datetime, timezone
 from pathlib import Path
-import subprocess
 
 import pytest
 
 from re_ass.llm_orchestrator import LlmOrchestrator
 from re_ass.models import ArxivPaper
+from re_ass.paper_summariser import GeneratedPaperSummary, PaperSummariserError
+from re_ass.paper_summariser.providers.base import Provider
+from re_ass.paper_summariser.service import SourceMetadata
+from re_ass.settings import LlmConfig
+
+
+class FakeProvider(Provider):
+    def setup(self):
+        self.responses = dict(self.config.get("responses", {}))
+
+    def process_document(self, content, is_pdf, system_prompt, user_prompt, max_tokens=12288):
+        del content, is_pdf, system_prompt, max_tokens
+        for prefix, response in self.responses.items():
+            if user_prompt.startswith(prefix):
+                return response
+        raise AssertionError(f"Unexpected prompt: {user_prompt}")
+
+    def get_max_context_size(self):
+        return 200_000
+
+
+class FakePaperSummariser:
+    def __init__(self, summary: GeneratedPaperSummary | None = None, error: Exception | None = None) -> None:
+        self.summary = summary
+        self.error = error
+
+    def summarise_paper(self, _paper: ArxivPaper) -> GeneratedPaperSummary:
+        if self.error is not None:
+            raise self.error
+        assert self.summary is not None
+        return self.summary
 
 
 def make_paper() -> ArxivPaper:
@@ -16,18 +47,32 @@ def make_paper() -> ArxivPaper:
         authors=("Jane Doe", "John Smith"),
         primary_category="cs.AI",
         categories=("cs.AI", "cs.CL"),
-        published=__import__("datetime").datetime(2026, 3, 21, 12, 0, tzinfo=__import__("datetime").timezone.utc),
-        updated=__import__("datetime").datetime(2026, 3, 21, 12, 0, tzinfo=__import__("datetime").timezone.utc),
+        published=datetime(2026, 3, 21, 12, 0, tzinfo=timezone.utc),
+        updated=datetime(2026, 3, 21, 12, 0, tzinfo=timezone.utc),
     )
 
 
-def test_process_paper_falls_back_when_command_is_unavailable(tmp_path: Path) -> None:
-    orchestrator = LlmOrchestrator(
-        command_prefix=("definitely-missing-re-ass-command", "-p"),
-        timeout_seconds=30,
-        enabled=True,
+def make_llm_config(tmp_path: Path, *, enabled: bool) -> LlmConfig:
+    return LlmConfig(
+        enabled=enabled,
+        mode="cli",
+        provider="claude",
+        model=None,
+        timeout_seconds=60,
+        max_output_tokens=12288,
+        temperature=0.2,
+        retry_attempts=3,
         allow_local_paper_note_fallback=True,
+        prompt_debug_file=tmp_path / "archive" / "prompt.txt",
+        download_timeout_seconds=120,
+        max_pdf_size_mb=100,
+        marker_timeout_seconds=300,
+        ollama_base_url="http://localhost:11434",
     )
+
+
+def test_process_paper_falls_back_when_llm_is_disabled(tmp_path: Path) -> None:
+    orchestrator = LlmOrchestrator(config=make_llm_config(tmp_path, enabled=False))
 
     processed = orchestrator.process_paper(make_paper(), tmp_path)
 
@@ -36,59 +81,72 @@ def test_process_paper_falls_back_when_command_is_unavailable(tmp_path: Path) ->
     assert processed.micro_summary.startswith("This paper studies tool-using agents.")
 
 
-def test_process_paper_uses_llm_output_when_command_succeeds(tmp_path: Path) -> None:
-    seen_prompts: list[str] = []
-
-    def fake_runner(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        prompt = str(command[-1])
-        seen_prompts.append(prompt)
-        if prompt.startswith("Use /summarise-paper skill"):
-            note_path = tmp_path / "LLM Generated Note.md"
-            note_path.write_text("# LLM Generated Note\n", encoding="utf-8")
-            return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
-        if prompt.startswith("Summarise the following arXiv abstract"):
-            return subprocess.CompletedProcess(command, 0, stdout="Short LLM summary.", stderr="")
-        raise AssertionError(f"Unexpected prompt: {prompt}")
-
+def test_process_paper_uses_generated_summary_when_summariser_succeeds(tmp_path: Path) -> None:
+    provider = FakeProvider(
+        {
+            "responses": {
+                "Title: Agents for Research\nAbstract:": "Short LLM summary.",
+            }
+        }
+    )
+    paper_summariser = FakePaperSummariser(
+        summary=GeneratedPaperSummary(
+            raw_summary="# Agents for Research\n\nAuthors: Jane Doe, John Smith\nPublished: March 2026 ([Link](https://arxiv.org/abs/1234.5678))\n\n## Key Ideas\n- Important point.\n",
+            note_content=(
+                "# Agents for Research\n\n"
+                "- ArXiv: [https://arxiv.org/abs/1234.5678](https://arxiv.org/abs/1234.5678)\n"
+                "- Published: 2026-03-21\n"
+                "- Authors: Jane Doe, John Smith\n"
+                "- Categories: cs.AI, cs.CL\n\n"
+                "## Abstract\n"
+                "This paper studies tool-using agents. It compares planning and execution loops.\n\n"
+                "## Key Ideas\n"
+                "- Important point.\n"
+            ),
+            source_metadata=SourceMetadata(
+                source_type="arxiv",
+                identifier="1234.5678",
+                canonical_url="https://arxiv.org/abs/1234.5678",
+                published_label="March 2026",
+                detection_method="filename",
+            ),
+            pdf_url="https://arxiv.org/pdf/1234.5678.pdf",
+        )
+    )
     orchestrator = LlmOrchestrator(
-        command_prefix=("echo",),
-        timeout_seconds=30,
-        enabled=True,
-        allow_local_paper_note_fallback=True,
-        runner=fake_runner,
+        config=make_llm_config(tmp_path, enabled=True),
+        provider=provider,
+        paper_summariser=paper_summariser,
     )
 
     processed = orchestrator.process_paper(make_paper(), tmp_path)
 
-    assert processed.note_name == "LLM Generated Note"
+    assert processed.note_name == "Agents for Research"
+    assert "## Key Ideas" in processed.note_path.read_text(encoding="utf-8")
     assert processed.micro_summary == "Short LLM summary."
-    assert any(prompt.startswith("Use /summarise-paper skill") for prompt in seen_prompts)
 
 
-def test_process_paper_logs_when_llm_returns_without_creating_note(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    def fake_runner(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        prompt = str(command[-1])
-        if prompt.startswith("Use /summarise-paper skill"):
-            return subprocess.CompletedProcess(
-                command,
-                0,
-                stdout="I need permission to fetch web content before I can summarise the paper.",
-                stderr="",
-            )
-        if prompt.startswith("Summarise the following arXiv abstract"):
-            return subprocess.CompletedProcess(command, 0, stdout="Short LLM summary.", stderr="")
-        raise AssertionError(f"Unexpected prompt: {prompt}")
-
+def test_process_paper_logs_and_falls_back_when_summariser_fails(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = FakeProvider(
+        {
+            "responses": {
+                "Title: Agents for Research\nAbstract:": "Short LLM summary.",
+            }
+        }
+    )
+    paper_summariser = FakePaperSummariser(error=PaperSummariserError("marker-pdf timed out"))
     orchestrator = LlmOrchestrator(
-        command_prefix=("echo",),
-        timeout_seconds=30,
-        enabled=True,
-        allow_local_paper_note_fallback=True,
-        runner=fake_runner,
+        config=make_llm_config(tmp_path, enabled=True),
+        provider=provider,
+        paper_summariser=paper_summariser,
     )
 
     processed = orchestrator.process_paper(make_paper(), tmp_path)
 
     assert processed.note_path.exists()
-    assert "without creating a note" in caplog.text
-    assert "permission to fetch web content" in caplog.text
+    assert "Paper note generation failed for Agents for Research" in caplog.text
+    assert "marker-pdf timed out" in caplog.text
+    assert "## Abstract" in processed.note_path.read_text(encoding="utf-8")

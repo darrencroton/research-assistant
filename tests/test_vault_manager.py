@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from re_ass.models import ArxivPaper, ProcessedPaper
-from re_ass.settings import AppConfig, DEFAULT_WEEKLY_TEMPLATE
+from re_ass.settings import AppConfig, DEFAULT_WEEKLY_TEMPLATE, LlmConfig
 from re_ass.vault_manager import VaultManager
 
 
@@ -23,10 +23,22 @@ def make_config(tmp_path: Path) -> AppConfig:
         fallback_window_hours=168,
         arxiv_max_results=50,
         default_categories=("cs.AI", "cs.CL"),
-        llm_enabled=False,
-        llm_command_prefix=("claude", "-p"),
-        llm_timeout_seconds=60,
-        allow_local_paper_note_fallback=True,
+        llm=LlmConfig(
+            enabled=False,
+            mode="cli",
+            provider="claude",
+            model=None,
+            timeout_seconds=60,
+            max_output_tokens=12288,
+            temperature=0.2,
+            retry_attempts=3,
+            allow_local_paper_note_fallback=True,
+            prompt_debug_file=tmp_path / "archive" / "prompt.txt",
+            download_timeout_seconds=120,
+            max_pdf_size_mb=100,
+            marker_timeout_seconds=300,
+            ollama_base_url="http://localhost:11434",
+        ),
     )
 
 

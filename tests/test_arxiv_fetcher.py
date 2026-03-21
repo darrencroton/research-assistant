@@ -114,3 +114,52 @@ def test_fetch_top_papers_tops_up_from_fallback_window_when_needed() -> None:
     )
 
     assert [paper.title for paper in papers] == ["Primordial black holes in the early universe"]
+
+
+def test_fetch_top_papers_skips_existing_note_names_when_topping_up() -> None:
+    now = datetime(2026, 3, 21, 12, 0, tzinfo=timezone.utc)
+    results = [
+        SimpleNamespace(
+            title="Existing Agents Paper",
+            summary="Agents and planning.",
+            entry_id="https://arxiv.org/abs/1234.0001",
+            authors=[SimpleNamespace(name="Author One")],
+            primary_category="cs.AI",
+            categories=("cs.AI",),
+            published=now - timedelta(hours=48),
+            updated=now - timedelta(hours=48),
+        ),
+        SimpleNamespace(
+            title="Fresh Agents Paper",
+            summary="Agents and execution.",
+            entry_id="https://arxiv.org/abs/1234.0002",
+            authors=[SimpleNamespace(name="Author Two")],
+            primary_category="cs.AI",
+            categories=("cs.AI",),
+            published=now - timedelta(hours=49),
+            updated=now - timedelta(hours=49),
+        ),
+    ]
+
+    class FakeClient:
+        def results(self, _search: object):
+            return results
+
+    fetcher = ArxivFetcher(
+        max_results=10,
+        fetch_window_hours=24,
+        fallback_window_hours=168,
+        now_provider=lambda: now,
+        client=FakeClient(),
+    )
+
+    papers = fetcher.fetch_top_papers(
+        PreferenceConfig(
+            priorities=("Agents",),
+            categories=("cs.AI",),
+        ),
+        max_papers=1,
+        excluded_note_names={"existing agents paper"},
+    )
+
+    assert [paper.title for paper in papers] == ["Fresh Agents Paper"]

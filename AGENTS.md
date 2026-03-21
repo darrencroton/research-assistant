@@ -17,7 +17,8 @@
 
 - `re_ass.toml`: main runtime configuration
 - `obsidian_vault/re-ass-preferences.md`: ranked preferences and arXiv categories
-- `src/re_ass/`: application code
+- `src/re_ass/paper_summariser/`: upstream-derived paper-note pipeline
+- `src/re_ass/`: application code around ranking, orchestration, and vault updates
 - `docs/`: assumptions, reports, and follow-up notes
 
 ## Working Notes
@@ -25,4 +26,5 @@
 - Keep changes simple and explicit.
 - Prefer deterministic fallbacks over silent failure.
 - Store simulation or retained runtime artifacts under `archive/`.
-- Current known external blocker: Claude `/summarise-paper` requests WebFetch permission in this environment, so paper-note generation falls back locally unless that is resolved.
+- Keep the paper-note path upstream-first: adapt at the orchestrator or vault boundary instead of rewriting the provider/extraction stack.
+- Current follow-up priority: live API-provider validation and faster simulation/backfill replay.

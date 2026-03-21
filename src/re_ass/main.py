@@ -60,16 +60,18 @@ def run(config: AppConfig, run_date: date | None = None) -> int:
         fallback_window_hours=config.fallback_window_hours,
         now_provider=lambda: _determine_window_end(target_date, explicit_date=run_date is not None),
     )
-    papers = fetcher.fetch_top_papers(preferences, config.max_papers)
+    excluded_note_names = {path.stem.casefold() for path in config.papers_dir.glob("*.md")}
+    papers = fetcher.fetch_top_papers(
+        preferences,
+        config.max_papers,
+        excluded_note_names=excluded_note_names,
+    )
     if not papers:
-        LOGGER.info("No recent matching arXiv papers found.")
+        LOGGER.info("No new matching arXiv papers found after duplicate suppression.")
         return 0
 
     orchestrator = LlmOrchestrator(
-        command_prefix=config.llm_command_prefix,
-        timeout_seconds=config.llm_timeout_seconds,
-        enabled=config.llm_enabled,
-        allow_local_paper_note_fallback=config.allow_local_paper_note_fallback,
+        config=config.llm,
     )
 
     processed_papers = [orchestrator.process_paper(paper, config.papers_dir) for paper in papers]

@@ -8,7 +8,7 @@ import re
 
 import arxiv
 
-from re_ass.models import ArxivPaper, PreferenceConfig
+from re_ass.models import ArxivPaper, PreferenceConfig, sanitize_note_name
 
 
 LOGGER = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ def _score_preference_match(paper: ArxivPaper, preference: str) -> tuple[bool, i
 def rank_papers(
     papers: Iterable[ArxivPaper],
     priorities: tuple[str, ...],
-    max_papers: int,
+    max_papers: int | None,
 ) -> list[ArxivPaper]:
     ranked: list[tuple[int, int, int, float, str, ArxivPaper]] = []
 
@@ -151,7 +151,10 @@ def rank_papers(
         )
 
     ranked.sort(key=lambda item: item[:4])
-    return [paper for *_metadata, paper in ranked[:max_papers]]
+    ordered = [paper for *_metadata, paper in ranked]
+    if max_papers is None:
+        return ordered
+    return ordered[:max_papers]
 
 
 class ArxivFetcher:
@@ -174,7 +177,13 @@ class ArxivFetcher:
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self.client = client or arxiv.Client(page_size=min(max_results, 100), num_retries=3, delay_seconds=3)
 
-    def fetch_top_papers(self, preferences: PreferenceConfig, max_papers: int) -> list[ArxivPaper]:
+    def fetch_top_papers(
+        self,
+        preferences: PreferenceConfig,
+        max_papers: int,
+        *,
+        excluded_note_names: set[str] | None = None,
+    ) -> list[ArxivPaper]:
         query = build_category_query(preferences.categories)
         search = arxiv.Search(
             query=query,
@@ -189,27 +198,22 @@ class ArxivFetcher:
         primary_ranked = rank_papers(
             filter_papers_between(all_papers, start=cutoff, end=window_end),
             preferences.priorities,
-            max_papers,
+            None,
         )
-        if len(primary_ranked) >= max_papers or self.fallback_window is None:
-            return primary_ranked
+        if self.fallback_window is None:
+            return self._select_unseen_papers(primary_ranked, max_papers, excluded_note_names)
 
         fallback_cutoff = window_end - self.fallback_window
         fallback_ranked = rank_papers(
             filter_papers_between(all_papers, start=fallback_cutoff, end=window_end),
             preferences.priorities,
-            max_papers,
+            None,
         )
-        combined: list[ArxivPaper] = []
-        seen_entry_ids: set[str] = set()
-
-        for paper in [*primary_ranked, *fallback_ranked]:
-            if paper.entry_id in seen_entry_ids:
-                continue
-            combined.append(paper)
-            seen_entry_ids.add(paper.entry_id)
-            if len(combined) == max_papers:
-                break
+        combined = self._select_unseen_papers(
+            [*primary_ranked, *fallback_ranked],
+            max_papers,
+            excluded_note_names,
+        )
 
         if combined and len(primary_ranked) < len(combined):
             LOGGER.info(
@@ -218,5 +222,27 @@ class ArxivFetcher:
                 int(self.fallback_window.total_seconds() // 3600),
                 len(combined),
             )
+
+        return combined
+
+    def _select_unseen_papers(
+        self,
+        ranked_papers: Iterable[ArxivPaper],
+        max_papers: int,
+        excluded_note_names: set[str] | None,
+    ) -> list[ArxivPaper]:
+        combined: list[ArxivPaper] = []
+        seen_entry_ids: set[str] = set()
+        excluded = {name.casefold() for name in (excluded_note_names or set())}
+
+        for paper in ranked_papers:
+            if paper.entry_id in seen_entry_ids:
+                continue
+            if sanitize_note_name(paper.title).casefold() in excluded:
+                continue
+            combined.append(paper)
+            seen_entry_ids.add(paper.entry_id)
+            if len(combined) == max_papers:
+                break
 
         return combined
