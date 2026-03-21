@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.re-ass</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/uv</string>
+        <string>run</string>
+        <string>--project</string>
+        <string>/Users/dcroton/Local/git-repos/re-ass</string>
+        <string>python</string>
+        <string>-m</string>
+        <string>re_ass</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/dcroton/Local/git-repos/re-ass</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/re-ass.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/re-ass.err</string>
+</dict>
+</plist>
