@@ -167,8 +167,8 @@ def test_pipeline_continues_after_non_fatal_per_paper_failure(tmp_path: Path, mo
     exit_code = run(config, date(2026, 3, 24))
 
     assert exit_code == 0
-    assert (config.papers_dir / "Bayer et al - 2026 - Working Paper [arXiv 2603.30001].md").exists()
-    assert not (config.papers_dir / "Bayer et al - 2026 - Broken Paper [arXiv 2603.30002].md").exists()
+    assert (config.papers_dir / "Bayer et al - 2026 - Working Paper.md").exists()
+    assert not (config.papers_dir / "Bayer et al - 2026 - Broken Paper.md").exists()
     assert (config.state_papers_dir / "arxiv_2603.30002.json").exists()
     assert "Working Paper" in (config.daily_dir / "2026-03-24.md").read_text(encoding="utf-8")
     weekly_note_text = (config.weekly_dir / config.weekly_note_file).read_text(encoding="utf-8")
@@ -212,8 +212,28 @@ def test_pipeline_writes_verbatim_summariser_note_output(tmp_path: Path, monkeyp
     exit_code = run(config, date(2026, 3, 26))
 
     assert exit_code == 0
-    note_path = config.papers_dir / "Bayer et al - 2026 - Verbatim Paper [arXiv 2603.30011].md"
+    note_path = config.papers_dir / "Bayer et al - 2026 - Verbatim Paper.md"
     assert note_path.read_text(encoding="utf-8") == raw_summary
+
+
+def test_pipeline_disambiguates_output_names_when_clean_stems_collide(tmp_path: Path, monkeypatch) -> None:
+    config = make_app_config(tmp_path)
+    papers = [
+        make_paper(arxiv_id="2603.30021", title="Same Title"),
+        make_paper(arxiv_id="2603.30022", title="Same Title"),
+    ]
+    monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher(papers))
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker(selection=_build_selection(papers, selected=papers)))
+    monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
+
+    exit_code = run(config, date(2026, 3, 26))
+
+    assert exit_code == 0
+    assert (config.papers_dir / "Bayer et al - 2026 - Same Title.md").exists()
+    assert (config.papers_dir / "Bayer et al - 2026 - Same Title (2603.30022).md").exists()
+    assert (config.processed_root / "Bayer et al - 2026 - Same Title.pdf").exists()
+    assert (config.processed_root / "Bayer et al - 2026 - Same Title (2603.30022).pdf").exists()
 
 
 def test_pipeline_leaves_papers_retryable_when_note_update_fails(tmp_path: Path, monkeypatch) -> None:

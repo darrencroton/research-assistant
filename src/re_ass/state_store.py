@@ -75,6 +75,22 @@ class StateStore:
                 keys.add(str(record["paper_key"]))
         return keys
 
+    def paper_key_for_output_path(self, output_path: str) -> str | None:
+        if not self.papers_dir.exists():
+            return None
+
+        for path in self.papers_dir.glob("*.json"):
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+
+            if output_path in {record.get("note_path"), record.get("pdf_path")}:
+                paper_key = record.get("paper_key")
+                if isinstance(paper_key, str):
+                    return paper_key
+        return None
+
     def latest_successful_run_end(self) -> datetime | None:
         if not self.runs_dir.exists():
             return None

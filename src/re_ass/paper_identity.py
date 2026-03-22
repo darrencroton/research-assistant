@@ -27,6 +27,18 @@ class PaperIdentity:
     authors_full: tuple[str, ...]
     year: int
 
+    def with_filename_stem(self, filename_stem: str) -> PaperIdentity:
+        return PaperIdentity(
+            paper_key=self.paper_key,
+            source_id=self.source_id,
+            filename_stem=filename_stem,
+            note_filename=f"{filename_stem}.md",
+            pdf_filename=f"{filename_stem}.pdf",
+            authors_short=self.authors_short,
+            authors_full=self.authors_full,
+            year=self.year,
+        )
+
 
 def _sanitize_filename_component(value: str) -> str:
     cleaned = value.translate(_FILENAME_SANITIZE_TABLE)
@@ -69,7 +81,7 @@ def derive_identity(paper: ArxivPaper) -> PaperIdentity:
     authors_short = _authors_short(paper.authors)
     year = paper.published.year
     title = _sanitize_filename_component(paper.title)
-    filename_stem = f"{authors_short} - {year} - {title} [arXiv {source_id}]"
+    filename_stem = f"{authors_short} - {year} - {title}"
     return PaperIdentity(
         paper_key=f"arxiv:{source_id}",
         source_id=source_id,

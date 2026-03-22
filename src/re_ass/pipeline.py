@@ -133,6 +133,36 @@ def _cleanup_path(path: Path | None) -> None:
         path.unlink()
 
 
+def _output_path_conflicts(path: Path, *, paper_key: str, state_store: StateStore) -> bool:
+    owner = state_store.paper_key_for_output_path(str(path))
+    if owner is not None:
+        return owner != paper_key
+    return path.exists()
+
+
+def _resolved_output_identity(config: AppConfig, state_store: StateStore, identity: PaperIdentity) -> PaperIdentity:
+    # Keep the clean human-readable stem by default and only suffix when a real
+    # on-disk or state-record collision would otherwise overwrite another paper.
+    for attempt in range(1000):
+        if attempt == 0:
+            candidate_stem = identity.filename_stem
+        elif attempt == 1:
+            candidate_stem = f"{identity.filename_stem} ({identity.source_id})"
+        else:
+            candidate_stem = f"{identity.filename_stem} ({identity.source_id}-{attempt})"
+
+        candidate = identity.with_filename_stem(candidate_stem)
+        note_path = config.papers_dir / candidate.note_filename
+        pdf_path = config.processed_root / candidate.pdf_filename
+        if _output_path_conflicts(note_path, paper_key=identity.paper_key, state_store=state_store):
+            continue
+        if _output_path_conflicts(pdf_path, paper_key=identity.paper_key, state_store=state_store):
+            continue
+        return candidate
+
+    raise RuntimeError(f"Could not find a collision-free output name for {identity.paper_key}.")
+
+
 def _bootstrap_runtime(config: AppConfig, note_manager: NoteManager, state_store: StateStore) -> None:
     config.output_root.mkdir(parents=True, exist_ok=True)
     config.processed_root.mkdir(parents=True, exist_ok=True)
@@ -259,7 +289,7 @@ def run(config: AppConfig, run_date: date | None = None, *, backfill: bool = Fal
         successful_papers: list[ProcessedPaper] = []
 
         for paper in papers:
-            identity = derive_identity(paper)
+            identity = _resolved_output_identity(config, state_store, derive_identity(paper))
             LOGGER.info("Processing %s (%s)", paper.title, identity.paper_key)
             micro_summary: str | None = None
             final_note_path: Path | None = None
