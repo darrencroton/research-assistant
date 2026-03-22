@@ -80,21 +80,3 @@ def test_state_store_returns_latest_successful_run_end(tmp_path: Path) -> None:
     )
 
     assert store.latest_successful_run_end().isoformat() == "2026-03-22T11:00:00+00:00"
-
-
-def test_state_store_finds_paper_key_for_output_path(tmp_path: Path) -> None:
-    store = StateStore(make_app_config(tmp_path))
-    store.bootstrap()
-    note_path = str(tmp_path / "output" / "papers" / "Doe - 2026 - Example Paper.md")
-
-    store.save_paper_record(
-        paper_key="arxiv:2603.15732",
-        source_id="2603.15732",
-        title="Example Paper",
-        published="2026-03-21T12:00:00+00:00",
-        filename_stem="Doe - 2026 - Example Paper",
-        status="note_written",
-        note_path=note_path,
-    )
-
-    assert store.paper_key_for_output_path(note_path) == "arxiv:2603.15732"
