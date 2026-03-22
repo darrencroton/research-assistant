@@ -24,6 +24,7 @@ def test_load_preferences_parses_categories_and_priorities(tmp_path: Path) -> No
 
     assert preferences.categories == ("cs.AI", "cs.CL")
     assert preferences.priorities == ("Agents", "RAG")
+    assert "## Priorities" in preferences.raw_text
 
 
 def test_load_preferences_uses_default_categories_when_missing(tmp_path: Path) -> None:

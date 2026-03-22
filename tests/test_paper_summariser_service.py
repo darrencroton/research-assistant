@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from re_ass.paper_summariser.providers.base import Provider
-from re_ass.paper_summariser.service import PaperSummariser, extract_summary_sections
+from re_ass.paper_summariser.service import PaperSummariser
 from tests.support import make_paper, make_app_config
 
 
@@ -93,15 +93,3 @@ def test_summarise_source_uses_direct_pdf_when_provider_supports_it(tmp_path: Pa
     assert provider.calls[0]["content"] == b"%PDF-1.4 direct pdf"
     assert provider.calls[0]["is_pdf"] is True
     assert "---BEGIN PAPER---" not in str(provider.calls[0]["user_prompt"])
-
-
-def test_extract_summary_sections_drops_preamble_text() -> None:
-    summary = (
-        "# Example Paper\n\n"
-        "Authors: Jane Doe\n"
-        "Published: March 2026\n\n"
-        "## Key Ideas\n"
-        "- Point one.\n"
-    )
-
-    assert extract_summary_sections(summary) == "## Key Ideas\n- Point one.\n"

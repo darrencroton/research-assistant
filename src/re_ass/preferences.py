@@ -18,7 +18,8 @@ _HEADING_PATTERN = re.compile(r"^\s*#{1,6}\s+(?P<value>.+?)\s*$")
 
 def load_preferences(preferences_path: Path, default_categories: tuple[str, ...]) -> PreferenceConfig:
     """Parse a Markdown preferences file into a PreferenceConfig."""
-    lines = preferences_path.read_text(encoding="utf-8").splitlines()
+    raw_text = preferences_path.read_text(encoding="utf-8")
+    lines = raw_text.splitlines()
 
     categories: list[str] = []
     priorities: list[str] = []
@@ -55,4 +56,5 @@ def load_preferences(preferences_path: Path, default_categories: tuple[str, ...]
     return PreferenceConfig(
         priorities=tuple(priorities),
         categories=final_categories,
+        raw_text=raw_text,
     )

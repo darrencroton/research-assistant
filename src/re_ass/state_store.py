@@ -75,6 +75,29 @@ class StateStore:
                 keys.add(str(record["paper_key"]))
         return keys
 
+    def latest_successful_run_end(self) -> datetime | None:
+        if not self.runs_dir.exists():
+            return None
+
+        for path in sorted(self.runs_dir.glob("*.json"), reverse=True):
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+
+            if record.get("fatal_error") is not None:
+                continue
+
+            interval_end = record.get("interval_end")
+            if not isinstance(interval_end, str):
+                continue
+
+            try:
+                return datetime.fromisoformat(interval_end)
+            except ValueError:
+                continue
+        return None
+
     def save_paper_record(
         self,
         *,

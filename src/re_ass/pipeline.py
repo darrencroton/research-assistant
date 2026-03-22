@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timezone
 import logging
 from pathlib import Path
 import tempfile
 
 from re_ass.arxiv_fetcher import ArxivFetcher
-from re_ass.generation_service import GenerationError, GenerationService
+from re_ass.generation_service import GenerationService
 from re_ass.models import ProcessedPaper
 from re_ass.note_manager import NoteManager
 from re_ass.paper_identity import PaperIdentity, derive_identity
 from re_ass.preferences import load_preferences
+from re_ass.ranking import PaperRanker
 from re_ass.settings import AppConfig
 from re_ass.state_store import StateStore
 
@@ -20,12 +21,79 @@ from re_ass.state_store import StateStore
 LOGGER = logging.getLogger(__name__)
 
 
-def _determine_window_end(target_date: date, *, explicit_date: bool) -> datetime:
-    local_timezone = datetime.now().astimezone().tzinfo or timezone.utc
+def _local_timezone() -> timezone:
+    return datetime.now().astimezone().tzinfo or timezone.utc
+
+
+def _local_day_bounds(target_date: date) -> tuple[datetime, datetime]:
+    local_timezone = _local_timezone()
+    start = datetime.combine(target_date, time.min, tzinfo=local_timezone).astimezone(timezone.utc)
+    end = datetime.combine(_next_day(target_date), time.min, tzinfo=local_timezone).astimezone(timezone.utc)
+    return start, end
+
+
+def _determine_interval(
+    target_date: date,
+    *,
+    explicit_date: bool,
+    state_store: StateStore,
+) -> tuple[datetime, datetime]:
     if explicit_date:
-        next_day = target_date + timedelta(days=1)
-        return datetime.combine(next_day, time.min, tzinfo=local_timezone).astimezone(timezone.utc)
-    return datetime.now(timezone.utc)
+        return _local_day_bounds(target_date)
+
+    now_utc = datetime.now(timezone.utc)
+    previous_end = state_store.latest_successful_run_end()
+    if previous_end is not None and previous_end < now_utc:
+        return previous_end.astimezone(timezone.utc), now_utc
+
+    day_start, _day_end = _local_day_bounds(target_date)
+    return day_start, now_utc
+
+
+def _paper_summary(selection) -> list[dict[str, object]]:
+    return [
+        {
+            "paper_key": item.paper_key,
+            "source_id": item.source_id,
+            "title": item.paper.title,
+            "published": item.paper.published.isoformat(),
+            "pre_rank_score": item.pre_rank_score,
+            "best_priority_index": item.best_priority_index,
+            "matched_priority_count": item.matched_priority_count,
+            "matched_priorities": list(item.matched_priorities),
+            "rerank_score": item.rerank_score,
+            "rationale": item.rationale,
+        }
+        for item in selection.reranked
+    ]
+
+
+def _shortlist_summary(selection) -> list[dict[str, object]]:
+    return [
+        {
+            "paper_key": item.paper_key,
+            "source_id": item.source_id,
+            "title": item.paper.title,
+            "published": item.paper.published.isoformat(),
+            "pre_rank_score": item.pre_rank_score,
+            "best_priority_index": item.best_priority_index,
+            "matched_priority_count": item.matched_priority_count,
+            "matched_priorities": list(item.matched_priorities),
+        }
+        for item in selection.shortlist
+    ]
+
+
+def _selected_identity_summary(papers) -> list[str]:
+    return [derive_identity(paper).paper_key for paper in papers]
+
+
+def _candidate_identity_summary(papers) -> list[str]:
+    return [derive_identity(paper).paper_key for paper in papers]
+
+
+def _next_day(target_date: date) -> date:
+    return date.fromordinal(target_date.toordinal() + 1)
 
 
 def _replace_file(source_path: Path, destination_path: Path) -> None:
@@ -49,6 +117,14 @@ def _bootstrap_runtime(config: AppConfig, note_manager: NoteManager, state_store
 def _run_summary_base(target_date: date) -> dict[str, object]:
     return {
         "run_date": target_date.isoformat(),
+        "interval_start": None,
+        "interval_end": None,
+        "candidate_count": 0,
+        "candidate_keys": [],
+        "shortlist_size": 0,
+        "shortlisted_papers": [],
+        "selected_paper_keys": [],
+        "ranking_results": [],
         "selected_papers": 0,
         "completed_papers": 0,
         "failed_papers": 0,
@@ -99,21 +175,42 @@ def run(config: AppConfig, run_date: date | None = None, *, backfill: bool = Fal
             note_manager.rotate_weekly_note_if_needed(target_date)
 
         preferences = load_preferences(config.preferences_file, config.default_categories)
-        fetcher = ArxivFetcher(
-            max_results=config.arxiv_max_results,
-            fetch_window_hours=config.fetch_window_hours,
-            fallback_window_hours=config.fallback_window_hours,
-            now_provider=lambda: _determine_window_end(target_date, explicit_date=run_date is not None),
+        generation_service = GenerationService(config=config.llm)
+        interval_start, interval_end = _determine_interval(
+            target_date,
+            explicit_date=run_date is not None,
+            state_store=state_store,
         )
-
-        papers = fetcher.fetch_top_papers(
+        fetcher = ArxivFetcher(
+            page_size=config.arxiv_page_size,
+        )
+        candidates = fetcher.collect_candidates(
             preferences,
-            config.max_papers,
+            start=interval_start,
+            end=interval_end,
             excluded_paper_keys=state_store.completed_paper_keys(),
         )
-        run_summary["selected_papers"] = len(papers)
+        run_summary["interval_start"] = interval_start.isoformat()
+        run_summary["interval_end"] = interval_end.isoformat()
+        run_summary["candidate_count"] = len(candidates)
+        run_summary["candidate_keys"] = _candidate_identity_summary(candidates)
+        ranker = PaperRanker(
+            provider=generation_service.provider,
+            config=config.llm,
+            shortlist_size=config.ranking_shortlist_size,
+        )
+        selection = ranker.select_top_papers(
+            preferences,
+            candidates,
+            max_papers=config.max_papers,
+        )
 
-        generation_service = GenerationService(config=config.llm)
+        papers = selection.selected_papers
+        run_summary["shortlist_size"] = len(selection.shortlist)
+        run_summary["shortlisted_papers"] = _shortlist_summary(selection)
+        run_summary["selected_paper_keys"] = _selected_identity_summary(papers)
+        run_summary["ranking_results"] = _paper_summary(selection)
+        run_summary["selected_papers"] = len(papers)
         successful_papers: list[ProcessedPaper] = []
 
         for paper in papers:

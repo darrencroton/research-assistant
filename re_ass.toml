@@ -32,13 +32,11 @@ archive_name_pattern = "{date}-weekly-arxiv.md"
 
 [arxiv]
 max_papers = 3
-fetch_window_hours = 24
-fallback_window_hours = 168
-max_results = 200
+page_size = 100
+shortlist_size = 24
 default_categories = ["astro-ph.CO"]
 
 [llm]
-enabled = false
 mode = "cli"
 provider = "claude"
 model = ""
@@ -46,7 +44,6 @@ timeout_seconds = 900
 max_output_tokens = 12288
 temperature = 0.2
 retry_attempts = 3
-allow_local_paper_note_fallback = true
 prompt_debug_file = "tmp/paper_summariser/prompt.txt"
 download_timeout_seconds = 120
 max_pdf_size_mb = 100

@@ -18,3 +18,10 @@ def test_create_provider_rejects_missing_api_key(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
         create_provider("api", "openai", config={"model": "gpt-5.2"})
+
+
+def test_create_provider_rejects_missing_cli_binary(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda _command: None)
+
+    with pytest.raises(ValueError, match="not found on PATH"):
+        create_provider("cli", "codex", config={"model": "gpt-5.4"})

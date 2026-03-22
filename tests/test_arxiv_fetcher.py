@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from re_ass.arxiv_fetcher import ArxivFetcher, build_category_query, filter_papers_between, rank_papers
+from re_ass.arxiv_fetcher import ArxivFetcher, build_category_query, filter_papers_between
 from re_ass.models import PreferenceConfig
 from re_ass.paper_identity import derive_identity
 from tests.support import make_paper
@@ -25,58 +25,77 @@ def test_filter_papers_between_respects_start_and_end_bounds() -> None:
     assert [paper.title for paper in recent] == ["Inside Window"]
 
 
-def test_rank_papers_prefers_highest_ranked_preference_then_recency() -> None:
+def test_collect_candidates_fetches_all_in_range_results_across_categories() -> None:
     now = datetime(2026, 3, 21, 12, 0, tzinfo=timezone.utc)
-    papers = [
-        make_paper(arxiv_id="2603.10011", title="Agents Planning", summary="Planning systems", published=now - timedelta(hours=3)),
-        make_paper(arxiv_id="2603.10012", title="RAG Benchmarks", summary="Retrieval methods", published=now - timedelta(hours=1)),
-        make_paper(arxiv_id="2603.10013", title="Agents and RAG", summary="Joint systems", published=now - timedelta(hours=5)),
-        make_paper(arxiv_id="2603.10014", title="Unrelated Vision", summary="Image generation", published=now - timedelta(hours=2)),
+    results = [
+        SimpleNamespace(
+            title="Too New",
+            summary="Outside the end bound.",
+            entry_id="https://arxiv.org/abs/2603.10020",
+            authors=[SimpleNamespace(name="Test Author")],
+            primary_category="cs.AI",
+            categories=("cs.AI",),
+            published=now + timedelta(hours=1),
+            updated=now + timedelta(hours=1),
+        ),
+        SimpleNamespace(
+            title="In Range One",
+            summary="Agents and tools.",
+            entry_id="https://arxiv.org/abs/2603.10021",
+            authors=[SimpleNamespace(name="Test Author")],
+            primary_category="cs.AI",
+            categories=("cs.AI",),
+            published=now - timedelta(hours=1),
+            updated=now - timedelta(hours=1),
+        ),
+        SimpleNamespace(
+            title="In Range Two",
+            summary="Language models.",
+            entry_id="https://arxiv.org/abs/2603.10022",
+            authors=[SimpleNamespace(name="Test Author")],
+            primary_category="cs.CL",
+            categories=("cs.CL",),
+            published=now - timedelta(hours=2),
+            updated=now - timedelta(hours=2),
+        ),
+        SimpleNamespace(
+            title="Too Old",
+            summary="Outside the start bound.",
+            entry_id="https://arxiv.org/abs/2603.10023",
+            authors=[SimpleNamespace(name="Test Author")],
+            primary_category="cs.CL",
+            categories=("cs.CL",),
+            published=now - timedelta(days=2),
+            updated=now - timedelta(days=2),
+        ),
     ]
-
-    ranked = rank_papers(papers, ("Agents", "RAG"), max_papers=3)
-
-    assert [paper.title for paper in ranked] == [
-        "Agents and RAG",
-        "Agents Planning",
-        "RAG Benchmarks",
-    ]
-
-
-def test_fetch_top_papers_tops_up_from_fallback_window_when_needed() -> None:
-    now = datetime(2026, 3, 21, 12, 0, tzinfo=timezone.utc)
-    result = SimpleNamespace(
-        title="Primordial black holes in the early universe",
-        summary="A study of black hole populations in cosmology.",
-        entry_id="https://arxiv.org/abs/2603.10021",
-        authors=[SimpleNamespace(name="Test Author")],
-        primary_category="astro-ph.CO",
-        categories=("astro-ph.CO",),
-        published=now - timedelta(hours=48),
-        updated=now - timedelta(hours=48),
-    )
 
     class FakeClient:
+        def __init__(self) -> None:
+            self.searches = []
+
         def results(self, _search: object):
-            return [result]
+            self.searches.append(_search)
+            return results
+
+    client = FakeClient()
 
     fetcher = ArxivFetcher(
-        max_results=10,
-        fetch_window_hours=24,
-        fallback_window_hours=168,
-        now_provider=lambda: now,
-        client=FakeClient(),
+        page_size=1,
+        client=client,
     )
 
-    papers = fetcher.fetch_top_papers(
-        PreferenceConfig(priorities=("black holes and AGN",), categories=("astro-ph.CO",)),
-        max_papers=3,
+    papers = fetcher.collect_candidates(
+        PreferenceConfig(priorities=("Agents",), categories=("cs.AI", "cs.CL"), raw_text="1. Agents"),
+        start=now - timedelta(hours=3),
+        end=now,
     )
 
-    assert [paper.title for paper in papers] == ["Primordial black holes in the early universe"]
+    assert [paper.title for paper in papers] == ["In Range One", "In Range Two"]
+    assert client.searches[0].query == "cat:cs.AI OR cat:cs.CL"
 
 
-def test_fetch_top_papers_skips_completed_paper_keys() -> None:
+def test_collect_candidates_skips_completed_paper_keys() -> None:
     now = datetime(2026, 3, 21, 12, 0, tzinfo=timezone.utc)
     results = [
         SimpleNamespace(
@@ -110,16 +129,14 @@ def test_fetch_top_papers_skips_completed_paper_keys() -> None:
     ).paper_key
 
     fetcher = ArxivFetcher(
-        max_results=10,
-        fetch_window_hours=24,
-        fallback_window_hours=168,
-        now_provider=lambda: now,
+        page_size=10,
         client=FakeClient(),
     )
 
-    papers = fetcher.fetch_top_papers(
-        PreferenceConfig(priorities=("Agents",), categories=("cs.AI",)),
-        max_papers=1,
+    papers = fetcher.collect_candidates(
+        PreferenceConfig(priorities=("Agents",), categories=("cs.AI",), raw_text="1. Agents"),
+        start=now - timedelta(days=3),
+        end=now,
         excluded_paper_keys={excluded_key},
     )
 

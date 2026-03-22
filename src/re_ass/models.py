@@ -13,6 +13,7 @@ class PreferenceConfig:
 
     priorities: tuple[str, ...]
     categories: tuple[str, ...]
+    raw_text: str
 
 
 @dataclass(frozen=True, slots=True)

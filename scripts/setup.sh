@@ -24,4 +24,13 @@ mkdir -p \
   tmp/paper_summariser \
   tmp/launchd
 
+uv run python - <<'PY'
+from re_ass.generation_service import GenerationService
+from re_ass.settings import load_config
+
+config = load_config()
+GenerationService(config=config.llm)
+print(f"Validated LLM provider: {config.llm.mode}/{config.llm.provider}")
+PY
+
 printf 'Setup complete.\n'

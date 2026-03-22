@@ -56,3 +56,27 @@ def test_state_store_saves_run_summary_json(tmp_path: Path) -> None:
 
     assert path.exists()
     assert json.loads(path.read_text(encoding="utf-8"))["completed_papers"] == 1
+
+
+def test_state_store_returns_latest_successful_run_end(tmp_path: Path) -> None:
+    store = StateStore(make_app_config(tmp_path))
+    store.bootstrap()
+
+    store.save_run_summary(
+        "2026-03-21",
+        {
+            "run_date": "2026-03-21",
+            "interval_end": "2026-03-21T10:00:00+00:00",
+            "fatal_error": "boom",
+        },
+    )
+    store.save_run_summary(
+        "2026-03-22",
+        {
+            "run_date": "2026-03-22",
+            "interval_end": "2026-03-22T11:00:00+00:00",
+            "fatal_error": None,
+        },
+    )
+
+    assert store.latest_successful_run_end().isoformat() == "2026-03-22T11:00:00+00:00"

@@ -10,7 +10,7 @@ from re_ass.models import ArxivPaper, ProcessedPaper
 from re_ass.paper_summariser import PaperSummariser, PaperSummariserError
 from re_ass.paper_summariser.providers import create_provider
 from re_ass.paper_summariser.providers.base import Provider
-from re_ass.paper_summariser.service import download_arxiv_pdf, extract_summary_sections
+from re_ass.paper_summariser.service import download_arxiv_pdf
 from re_ass.settings import LlmConfig
 
 
@@ -23,7 +23,7 @@ class GenerationError(RuntimeError):
 
 
 class GenerationService:
-    """Owns app-side text generation and deterministic fallbacks."""
+    """Owns app-side text generation and the vendored paper summariser."""
 
     def __init__(
         self,
@@ -33,21 +33,13 @@ class GenerationService:
         paper_summariser: PaperSummariser | None = None,
     ) -> None:
         self.config = config
-        self.provider = provider
-
-        if self.config.enabled and self.provider is None:
-            self.provider = create_provider(
+        self.provider = provider or create_provider(
                 self.config.mode,
                 self.config.provider,
                 config=self.config.provider_config(),
-            )
+        )
 
-        if paper_summariser is not None:
-            self.paper_summariser = paper_summariser
-        elif self.provider is not None:
-            self.paper_summariser = PaperSummariser(provider=self.provider, config=self.config)
-        else:
-            self.paper_summariser = None
+        self.paper_summariser = paper_summariser or PaperSummariser(provider=self.provider, config=self.config)
 
     def generate_micro_summary(self, paper: ArxivPaper) -> str:
         """Generate a 1-2 sentence micro-summary from title and abstract."""
@@ -74,18 +66,12 @@ class GenerationService:
             raise GenerationError(str(error)) from error
 
     def build_paper_note_content(self, paper: ArxivPaper, staged_source_path: Path) -> str:
-        """Return final note content for a paper using the summariser or fallback text."""
-        if self.paper_summariser is not None:
-            try:
-                summary = self.paper_summariser.summarise_source(paper, staged_source_path)
-                return self._build_note_content(paper, summary.raw_summary)
-            except PaperSummariserError as error:
-                LOGGER.warning("Paper note generation failed for %s: %s", paper.title, error)
-
-        if not self.config.allow_local_paper_note_fallback:
-            raise GenerationError(f"Unable to create paper note for {paper.title}.")
-
-        return self._build_fallback_note(paper)
+        """Return final note content for a paper using the vendored summariser output."""
+        try:
+            summary = self.paper_summariser.summarise_source(paper, staged_source_path)
+            return summary.raw_summary
+        except PaperSummariserError as error:
+            raise GenerationError(f"Unable to create paper note for {paper.title}: {error}") from error
 
     def generate_weekly_synthesis(self, existing_synthesis: str, papers: list[ProcessedPaper]) -> str:
         """Generate or update the weekly synthesis text."""
@@ -106,8 +92,6 @@ class GenerationService:
         return self._fallback_weekly_synthesis(existing_synthesis, papers)
 
     def _run_text_prompt(self, system_prompt: str, user_prompt: str, *, max_tokens: int) -> str:
-        if self.provider is None:
-            raise GenerationError("No LLM provider configured.")
         try:
             return self.provider.process_document(
                 content="",
@@ -118,34 +102,6 @@ class GenerationService:
             ).strip()
         except Exception as error:
             raise GenerationError(str(error)) from error
-
-    def _build_note_content(self, paper: ArxivPaper, raw_summary: str) -> str:
-        summary_sections = extract_summary_sections(raw_summary).rstrip()
-        published_date = paper.published.date().isoformat()
-        return (
-            f"# {paper.title}\n\n"
-            f"- ArXiv: [{paper.arxiv_url}]({paper.arxiv_url})\n"
-            f"- Published: {published_date}\n"
-            f"- Authors: {', '.join(paper.authors)}\n"
-            f"- Categories: {', '.join(paper.categories)}\n\n"
-            "## Abstract\n"
-            f"{paper.summary}\n\n"
-            f"{summary_sections}\n"
-        )
-
-    def _build_fallback_note(self, paper: ArxivPaper) -> str:
-        published_date = paper.published.date().isoformat()
-        return (
-            f"# {paper.title}\n\n"
-            f"- ArXiv: [{paper.arxiv_url}]({paper.arxiv_url})\n"
-            f"- Published: {published_date}\n"
-            f"- Authors: {', '.join(paper.authors)}\n"
-            f"- Categories: {', '.join(paper.categories)}\n\n"
-            "## Abstract\n"
-            f"{paper.summary}\n\n"
-            "## Notes\n"
-            "LLM-generated note creation was unavailable, so this fallback note preserves the core metadata.\n"
-        )
 
     def _fallback_micro_summary(self, abstract: str) -> str:
         sentences = [sentence.strip() for sentence in _SENTENCE_SPLIT.split(abstract.strip()) if sentence.strip()]

@@ -1,6 +1,6 @@
 # research-assistant
 
-`research-assistant` is a local arXiv workflow that produces generic Markdown outputs.
+`research-assistant` is a local arXiv workflow that fetches in-range arXiv candidates, reranks them against your preferences with an LLM, and writes upstream-style paper summaries plus daily and weekly notes.
 
 The Python package and CLI are still named `re-ass`.
 
@@ -11,8 +11,9 @@ Install `uv` and make sure it is on `PATH`.
 ## What It Does
 
 - reads ranked interests from `preferences.md`
-- fetches recent arXiv papers and ranks them against those interests
-- generates paper summaries under `output/papers/`
+- fetches all in-range arXiv candidates for the configured categories
+- pre-ranks the full candidate set, then LLM-reranks a shortlist to choose the top papers
+- generates paper summaries under `output/papers/` using the vendored summariser output directly
 - updates daily and weekly summaries under `output/daily/` and `output/weekly/`
 - retains processed PDFs under `processed/`
 - records explicit machine state under `state/`
@@ -31,12 +32,15 @@ That script:
 - installs project dependencies with `uv`
 - creates the local runtime directories used by the app
 - creates `tmp/` for local scratch output such as prompt-debug files and rendered launchd assets
+- validates that the configured LLM provider is usable on this machine
+
+Before running setup, choose a working provider in `re_ass.toml` and make sure its prerequisites are available. The default config expects the `codex` CLI on `PATH`. If you switch to an API provider, set the required API key first.
 
 ## Run
 
 ```bash
-uv run pytest
-uv run re-ass
+uv run re-ass   # to run the research assistant with defaults
+uv run pytest   # to run the test suite (debugging and verification)
 ```
 
 Edit `preferences.md` before your first real run so ranking uses your own categories and priorities.
@@ -90,14 +94,15 @@ Main config lives in `re_ass.toml`.
 - `[templates]` points at the daily and weekly template files.
 - `[preferences]` points at `preferences.md`.
 - `[notes]` controls link style, weekly summary filename, weekly rotation day, and archive naming.
-- `[llm]` controls summarisation and synthesis generation.
+- `[arxiv]` controls the number of selected papers, arXiv page size, shortlist size, and default categories.
+- `[llm]` controls the mandatory provider used for reranking, paper summaries, and weekly synthesis.
 
 Supported providers:
 
 - CLI: `claude`, `codex`, `gemini`, `copilot`
 - API: `claude`, `openai`, `gemini`, `perplexity`, `ollama`
 
-`llm.enabled = false` by default. When disabled, `re-ass` still produces deterministic fallback paper summaries, micro-summaries, and weekly synthesis.
+`re-ass` requires a working configured provider. If the configured CLI binary or API credentials are missing, setup and runtime fail fast instead of writing degraded fallback paper notes.
 
 ## Templates
 
@@ -111,10 +116,10 @@ Content outside those markers is preserved untouched.
 ## State And Logs
 
 - `state/papers/*.json` is the authoritative duplicate-suppression record.
-- `state/runs/*.json` stores per-run summaries, including zero-new-paper runs.
+- `state/runs/*.json` stores per-run summaries, including interval bounds, candidate counts, shortlist diagnostics, rerank scores, and selected paper IDs.
 - `logs/history.log` is append-only.
 - `logs/last-run.log` is replaced on every run.
-- `tmp/paper_summariser/prompt.txt` is the optional prompt-debug artifact when enabled.
+- `tmp/paper_summariser/prompt.txt` stores the latest summariser prompt-debug artifact.
 
 ## Launchd
 

@@ -23,7 +23,6 @@ _VALID_ROTATION_DAYS = (
 class LlmConfig:
     """LLM provider and summarisation settings."""
 
-    enabled: bool
     mode: str
     provider: str
     model: str | None
@@ -31,7 +30,6 @@ class LlmConfig:
     max_output_tokens: int
     temperature: float
     retry_attempts: int
-    allow_local_paper_note_fallback: bool
     prompt_debug_file: Path
     download_timeout_seconds: int
     max_pdf_size_mb: int
@@ -90,9 +88,8 @@ class AppConfig:
 
     # arxiv
     max_papers: int
-    fetch_window_hours: int
-    fallback_window_hours: int
-    arxiv_max_results: int
+    arxiv_page_size: int
+    ranking_shortlist_size: int
     default_categories: tuple[str, ...]
 
     # llm
@@ -189,12 +186,11 @@ def load_config(config_path: Path | None = None, project_root: Path | None = Non
 
     # LLM
     mode = str(llm_data.get("mode", "cli")).strip().lower()
-    provider = str(llm_data.get("provider", "claude")).strip().lower()
+    provider = str(llm_data.get("provider", "codex")).strip().lower()
     raw_model = llm_data.get("model")
     model = str(raw_model).strip() if raw_model not in (None, "") else None
 
     llm = LlmConfig(
-        enabled=bool(llm_data.get("enabled", False)),
         mode=mode,
         provider=provider,
         model=model,
@@ -202,7 +198,6 @@ def load_config(config_path: Path | None = None, project_root: Path | None = Non
         max_output_tokens=int(llm_data.get("max_output_tokens", 12288)),
         temperature=float(llm_data.get("temperature", 0.2)),
         retry_attempts=int(llm_data.get("retry_attempts", 3)),
-        allow_local_paper_note_fallback=bool(llm_data.get("allow_local_paper_note_fallback", True)),
         prompt_debug_file=_resolve_path(
             root,
             str(llm_data.get("prompt_debug_file", "tmp/paper_summariser/prompt.txt")),
@@ -234,9 +229,8 @@ def load_config(config_path: Path | None = None, project_root: Path | None = Non
         rotation_day=rotation_day,
         archive_name_pattern=archive_name_pattern,
         max_papers=int(arxiv_data.get("max_papers", 3)),
-        fetch_window_hours=int(arxiv_data.get("fetch_window_hours", 24)),
-        fallback_window_hours=int(arxiv_data.get("fallback_window_hours", 168)),
-        arxiv_max_results=int(arxiv_data.get("max_results", 200)),
+        arxiv_page_size=int(arxiv_data.get("page_size", arxiv_data.get("max_results", 100))),
+        ranking_shortlist_size=int(arxiv_data.get("shortlist_size", 24)),
         default_categories=default_categories,
         llm=llm,
     )
