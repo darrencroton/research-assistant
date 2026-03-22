@@ -1,12 +1,14 @@
+"""Tests for the preferences module."""
+
 from pathlib import Path
 
 import pytest
 
-from re_ass.config_manager import load_preferences
+from re_ass.preferences import load_preferences
 
 
 def test_load_preferences_parses_categories_and_priorities(tmp_path: Path) -> None:
-    preferences_file = tmp_path / "re-ass-preferences.md"
+    preferences_file = tmp_path / "preferences.md"
     preferences_file.write_text(
         "# Arxiv Priorities\n\n"
         "## Categories\n"
@@ -25,7 +27,7 @@ def test_load_preferences_parses_categories_and_priorities(tmp_path: Path) -> No
 
 
 def test_load_preferences_uses_default_categories_when_missing(tmp_path: Path) -> None:
-    preferences_file = tmp_path / "re-ass-preferences.md"
+    preferences_file = tmp_path / "preferences.md"
     preferences_file.write_text(
         "# Arxiv Priorities\n"
         "1. Agents\n"
@@ -40,7 +42,7 @@ def test_load_preferences_uses_default_categories_when_missing(tmp_path: Path) -
 
 
 def test_load_preferences_requires_priorities(tmp_path: Path) -> None:
-    preferences_file = tmp_path / "re-ass-preferences.md"
+    preferences_file = tmp_path / "preferences.md"
     preferences_file.write_text("# Empty\n\n## Categories\n- cs.AI\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="No priorities found"):

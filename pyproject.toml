@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "re-ass"
 version = "0.1.0"
-description = "Local arXiv research assistant for Obsidian"
+description = "Local arXiv research assistant with generic Markdown outputs"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

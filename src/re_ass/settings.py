@@ -1,3 +1,5 @@
+"""Configuration loading and validation for re-ass."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -5,29 +7,22 @@ from pathlib import Path
 import tomllib
 
 
-DEFAULT_WEEKLY_TEMPLATE = """# This Week's ArXiv Overview
-
-## Synthesis
-*(A synthesis of this week's papers will be automatically generated here. Max 100 words.)*
-
----
-## Daily Additions
-"""
-
-DEFAULT_PREFERENCES_FILE = """# Arxiv Priorities
-
-## Categories
-- astro-ph.CO
-
-## Priorities
-1. Little red dots
-2. black holes and AGN
-3. semi-analytic galaxy formation models
-"""
+_VALID_LINK_STYLES = ("wikilink", "markdown")
+_VALID_ROTATION_DAYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
 
 
 @dataclass(frozen=True, slots=True)
 class LlmConfig:
+    """LLM provider and summarisation settings."""
+
     enabled: bool
     mode: str
     provider: str
@@ -57,20 +52,50 @@ class LlmConfig:
 
 @dataclass(frozen=True, slots=True)
 class AppConfig:
+    """Application configuration matching the re_ass.toml schema."""
+
     project_root: Path
-    vault_root: Path
-    preferences_file: Path
-    weekly_note_file: Path
-    daily_dir: Path
+
+    # output/
+    output_root: Path
     papers_dir: Path
-    weekly_archive_dir: Path
-    templates_dir: Path
-    weekly_template_file: Path
+    daily_dir: Path
+    weekly_dir: Path
+
+    # processed/
+    processed_root: Path
+
+    # state/
+    state_root: Path
+    state_papers_dir: Path
+    state_runs_dir: Path
+
+    # logs/
+    logs_root: Path
+    history_log_file: Path
+    last_run_log_file: Path
+
+    # templates
+    daily_template: Path
+    weekly_template: Path
+
+    # preferences
+    preferences_file: Path
+
+    # notes
+    link_style: str
+    weekly_note_file: str
+    rotation_day: str
+    archive_name_pattern: str
+
+    # arxiv
     max_papers: int
     fetch_window_hours: int
     fallback_window_hours: int
     arxiv_max_results: int
     default_categories: tuple[str, ...]
+
+    # llm
     llm: LlmConfig
 
 
@@ -85,17 +110,8 @@ def _resolve_path(base_path: Path, raw_path: str) -> Path:
     return (base_path / candidate).resolve()
 
 
-def _infer_legacy_provider(llm_data: dict[str, object]) -> tuple[str, str]:
-    raw_prefix = llm_data.get("command_prefix")
-    if not isinstance(raw_prefix, list) or not raw_prefix:
-        return "cli", "claude"
-    command = str(raw_prefix[0]).strip().lower()
-    if command in {"claude", "codex", "gemini", "copilot"}:
-        return "cli", command
-    return "cli", "claude"
-
-
 def load_config(config_path: Path | None = None, project_root: Path | None = None) -> AppConfig:
+    """Load and validate application configuration from re_ass.toml."""
     root = (project_root or _default_project_root()).resolve()
     candidate = Path(config_path).expanduser().resolve() if config_path else (root / "re_ass.toml").resolve()
     data: dict[str, object] = {}
@@ -106,21 +122,74 @@ def load_config(config_path: Path | None = None, project_root: Path | None = Non
         if project_root is None:
             root = candidate.parent.resolve()
 
-    vault_data = data.get("vault", {})
+    output_data = data.get("output", {})
+    processed_data = data.get("processed", {})
+    state_data = data.get("state", {})
+    logs_data = data.get("logs", {})
+    templates_data = data.get("templates", {})
+    preferences_data = data.get("preferences", {})
+    notes_data = data.get("notes", {})
     arxiv_data = data.get("arxiv", {})
     llm_data = data.get("llm", {})
-    if not isinstance(vault_data, dict) or not isinstance(arxiv_data, dict) or not isinstance(llm_data, dict):
-        raise ValueError("Invalid configuration format in re_ass.toml.")
 
-    vault_root = _resolve_path(root, str(vault_data.get("root", "obsidian_vault")))
-    templates_dir = _resolve_path(vault_root, str(vault_data.get("templates_dir", "Templates")))
-    default_categories = tuple(str(category) for category in arxiv_data.get("default_categories", ["astro-ph.CO"]))
+    for name, section in [
+        ("output", output_data),
+        ("processed", processed_data),
+        ("state", state_data),
+        ("logs", logs_data),
+        ("templates", templates_data),
+        ("preferences", preferences_data),
+        ("notes", notes_data),
+        ("arxiv", arxiv_data),
+        ("llm", llm_data),
+    ]:
+        if not isinstance(section, dict):
+            raise ValueError(f"Invalid configuration format for [{name}] in re_ass.toml.")
+
+    # Output paths
+    output_root = _resolve_path(root, str(output_data.get("root", "output")))
+    papers_dir = _resolve_path(output_root, str(output_data.get("papers_dir", "papers")))
+    daily_dir = _resolve_path(output_root, str(output_data.get("daily_dir", "daily")))
+    weekly_dir = _resolve_path(output_root, str(output_data.get("weekly_dir", "weekly")))
+
+    # Processed
+    processed_root = _resolve_path(root, str(processed_data.get("root", "processed")))
+
+    # State paths
+    state_root = _resolve_path(root, str(state_data.get("root", "state")))
+    state_papers_dir = _resolve_path(state_root, str(state_data.get("papers_dir", "papers")))
+    state_runs_dir = _resolve_path(state_root, str(state_data.get("runs_dir", "runs")))
+
+    # Logs
+    logs_root = _resolve_path(root, str(logs_data.get("root", "logs")))
+    history_log_file = _resolve_path(logs_root, str(logs_data.get("history_file", "history.log")))
+    last_run_log_file = _resolve_path(logs_root, str(logs_data.get("last_run_file", "last-run.log")))
+
+    # Templates
+    daily_template = _resolve_path(root, str(templates_data.get("daily_template", "templates/daily-note-template.md")))
+    weekly_template = _resolve_path(root, str(templates_data.get("weekly_template", "templates/weekly-note-template.md")))
+
+    # Preferences
+    preferences_file = _resolve_path(root, str(preferences_data.get("file", "preferences.md")))
+
+    # Notes
+    link_style = str(notes_data.get("link_style", "wikilink")).strip().lower()
+    if link_style not in _VALID_LINK_STYLES:
+        raise ValueError(f"notes.link_style must be one of {_VALID_LINK_STYLES}, got '{link_style}'.")
+    weekly_note_file = str(notes_data.get("weekly_note_file", "this-weeks-arxiv-papers.md"))
+    rotation_day = str(notes_data.get("rotation_day", "monday")).strip().lower()
+    if rotation_day not in _VALID_ROTATION_DAYS:
+        raise ValueError(f"notes.rotation_day must be one of {_VALID_ROTATION_DAYS}, got '{rotation_day}'.")
+    archive_name_pattern = str(notes_data.get("archive_name_pattern", "{date}-weekly-arxiv.md"))
+
+    # Arxiv
+    default_categories = tuple(str(cat) for cat in arxiv_data.get("default_categories", ["astro-ph.CO"]))
     if not default_categories:
         raise ValueError("arxiv.default_categories must contain at least one category.")
 
-    legacy_mode, legacy_provider = _infer_legacy_provider(llm_data)
-    mode = str(llm_data.get("mode", legacy_mode)).strip().lower()
-    provider = str(llm_data.get("provider", legacy_provider)).strip().lower()
+    # LLM
+    mode = str(llm_data.get("mode", "cli")).strip().lower()
+    provider = str(llm_data.get("provider", "claude")).strip().lower()
     raw_model = llm_data.get("model")
     model = str(raw_model).strip() if raw_model not in (None, "") else None
 
@@ -146,14 +215,24 @@ def load_config(config_path: Path | None = None, project_root: Path | None = Non
 
     return AppConfig(
         project_root=root,
-        vault_root=vault_root,
-        preferences_file=_resolve_path(vault_root, str(vault_data.get("preferences_file", "re-ass-preferences.md"))),
-        weekly_note_file=_resolve_path(vault_root, str(vault_data.get("weekly_note_file", "this-weeks-arxiv-papers.md"))),
-        daily_dir=_resolve_path(vault_root, str(vault_data.get("daily_dir", "Daily"))),
-        papers_dir=_resolve_path(vault_root, str(vault_data.get("papers_dir", "Papers"))),
-        weekly_archive_dir=_resolve_path(vault_root, str(vault_data.get("weekly_archive_dir", "Weekly_Archive"))),
-        templates_dir=templates_dir,
-        weekly_template_file=_resolve_path(templates_dir, str(vault_data.get("weekly_template_file", "weekly-arxiv-template.md"))),
+        output_root=output_root,
+        papers_dir=papers_dir,
+        daily_dir=daily_dir,
+        weekly_dir=weekly_dir,
+        processed_root=processed_root,
+        state_root=state_root,
+        state_papers_dir=state_papers_dir,
+        state_runs_dir=state_runs_dir,
+        logs_root=logs_root,
+        history_log_file=history_log_file,
+        last_run_log_file=last_run_log_file,
+        daily_template=daily_template,
+        weekly_template=weekly_template,
+        preferences_file=preferences_file,
+        link_style=link_style,
+        weekly_note_file=weekly_note_file,
+        rotation_day=rotation_day,
+        archive_name_pattern=archive_name_pattern,
         max_papers=int(arxiv_data.get("max_papers", 3)),
         fetch_window_hours=int(arxiv_data.get("fetch_window_hours", 24)),
         fallback_window_hours=int(arxiv_data.get("fallback_window_hours", 168)),

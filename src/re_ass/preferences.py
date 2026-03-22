@@ -1,3 +1,8 @@
+"""Preferences parsing for re-ass.
+
+Reads user categories and ranked priorities from a Markdown preferences file.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,6 +17,7 @@ _HEADING_PATTERN = re.compile(r"^\s*#{1,6}\s+(?P<value>.+?)\s*$")
 
 
 def load_preferences(preferences_path: Path, default_categories: tuple[str, ...]) -> PreferenceConfig:
+    """Parse a Markdown preferences file into a PreferenceConfig."""
     lines = preferences_path.read_text(encoding="utf-8").splitlines()
 
     categories: list[str] = []

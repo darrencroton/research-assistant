@@ -1,29 +1,24 @@
+"""Core dataclasses shared across re-ass application modules."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import re
 from pathlib import Path
-
-
-_INVALID_NOTE_CHARACTERS = '/\\:*?"<>|#[]'
-
-
-def sanitize_note_name(title: str) -> str:
-    translation_table = str.maketrans({character: " " for character in _INVALID_NOTE_CHARACTERS})
-    normalized = title.translate(translation_table).replace("]]", " ").replace("[[", " ")
-    normalized = re.sub(r"\s+", " ", normalized).strip(" .")
-    return normalized or "Untitled Paper"
 
 
 @dataclass(frozen=True, slots=True)
 class PreferenceConfig:
+    """Parsed user preferences: ranked priorities and arXiv categories."""
+
     priorities: tuple[str, ...]
     categories: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class ArxivPaper:
+    """A paper fetched from arXiv."""
+
     title: str
     summary: str
     arxiv_url: str
@@ -48,13 +43,11 @@ class ArxivPaper:
 
 @dataclass(frozen=True, slots=True)
 class ProcessedPaper:
-    paper: ArxivPaper
-    note_name: str
-    note_path: Path
-    micro_summary: str
+    """A paper that has been successfully processed through the pipeline."""
 
-    @property
-    def wikilink(self) -> str:
-        if self.note_name == self.paper.title:
-            return f"[[{self.note_name}]]"
-        return f"[[{self.note_name}|{self.paper.title}]]"
+    paper: ArxivPaper
+    paper_key: str
+    filename_stem: str
+    note_path: Path
+    pdf_path: Path | None
+    micro_summary: str

@@ -1,29 +1,45 @@
 # research-assistant
 
-`research-assistant` is a local arXiv-to-Obsidian workflow.
+`research-assistant` is a local arXiv workflow that produces generic Markdown outputs.
 
 The Python package and CLI are still named `re-ass`.
 
-## Current Scope
+## Prerequisite
 
-- reads ranked interests from `obsidian_vault/re-ass-preferences.md`
-- fetches and ranks matching arXiv papers
-- updates daily and weekly Obsidian notes
+Install `uv` and make sure it is on `PATH`.
+
+## What It Does
+
+- reads ranked interests from `preferences.md`
+- fetches recent arXiv papers and ranks them against those interests
+- generates paper notes under `output/papers/`
+- updates daily and weekly notes under `output/daily/` and `output/weekly/`
+- retains processed PDFs under `processed/`
+- records explicit machine state under `state/`
+- writes local run logs under `logs/`
 - supports historical backfill with `--date`
-- suppresses repeated paper selection when widened lookbacks resurface already-written notes
-- uses an upstream-derived paper summariser in `src/re_ass/paper_summariser/`
-- fetches arXiv PDFs locally, then either:
-  - sends raw PDFs to providers that support direct PDF input
-  - or extracts text with `marker-pdf` before prompting the selected provider
-- defaults to deterministic local fallbacks when LLM generation is disabled or unavailable
+- keeps the upstream-derived paper summariser vendored under `src/re_ass/paper_summariser/`
 
-## Quick Start
+## Fresh Install
 
 ```bash
-uv sync --group dev
+./scripts/setup.sh
+```
+
+That script:
+
+- installs project dependencies with `uv`
+- creates the local runtime directories used by the app
+- creates `tmp/` for local scratch output such as prompt-debug files and rendered launchd assets
+
+## Run
+
+```bash
 uv run pytest
 uv run re-ass
 ```
+
+Edit `preferences.md` before your first real run so ranking uses your own categories and priorities.
 
 Backfill a specific day:
 
@@ -31,17 +47,86 @@ Backfill a specific day:
 uv run re-ass --date 2026-03-21
 ```
 
+## Runtime Layout
+
+```text
+output/
+  papers/      generated paper notes
+  daily/       daily notes
+  weekly/      current weekly note plus weekly archives
+processed/     retained PDFs for completed papers
+state/
+  papers/      per-paper JSON records
+  runs/        per-run JSON summaries
+logs/
+  history.log
+  last-run.log
+tmp/
+  paper_summariser/
+  launchd/
+templates/
+  daily-note-template.md
+  weekly-note-template.md
+preferences.md
+```
+
+## Obsidian Integration
+
+The output layer is generic Markdown, but Obsidian is still the main expected consumer.
+
+- Symlink `output/papers/`, `output/daily/`, or `output/weekly/` into your vault if you want the generated notes to appear there directly.
+- Point `[templates]` in `re_ass.toml` at template files inside your vault, or symlink `templates/*.md` to your Obsidian template files.
+- `notes.link_style` defaults to `wikilink`. Set it to `markdown` if you want relative Markdown links instead.
+
 ## Configuration
 
-- Main config: `re_ass.toml`
-- Preferences: `obsidian_vault/re-ass-preferences.md`
-- Main runtime switch: `[llm]`
-- Supported CLI providers: `claude`, `codex`, `gemini`, `copilot`
-- Supported API providers: `claude`, `openai`, `gemini`, `perplexity`, `ollama`
-- `llm.enabled = false` by default
+Main config lives in `re_ass.toml`.
 
-## Validation Artifacts
+- `[output]` controls the user-facing Markdown directories.
+- `[processed]`, `[state]`, and `[logs]` control retained artifacts, machine state, and diagnostics.
+- `tmp/` is used for local scratch/debug output and is never committed.
+- `[templates]` points at the daily and weekly template files.
+- `[preferences]` points at `preferences.md`.
+- `[notes]` controls link style, weekly note filename, weekly rotation day, and archive naming.
+- `[llm]` controls summarisation and synthesis generation.
 
-- Latest validation report: `docs/validation-report-2026-03-22.md`
-- Single-day live run: `archive/validation-2026-03-22/`
-- Multi-day live replay: `archive/simulation-2026-03-19-to-2026-03-21/`
+Supported providers:
+
+- CLI: `claude`, `codex`, `gemini`, `copilot`
+- API: `claude`, `openai`, `gemini`, `perplexity`, `ollama`
+
+`llm.enabled = false` by default. When disabled, `re-ass` still produces fallback note content, micro-summaries, and weekly synthesis deterministically.
+
+## Templates
+
+The app edits notes only inside managed markers.
+
+- Daily template marker: `re-ass:daily-top-paper`
+- Weekly template markers: `re-ass:weekly-synthesis`, `re-ass:weekly-daily-additions`
+
+Content outside those markers is preserved untouched.
+
+## State And Logs
+
+- `state/papers/*.json` is the authoritative duplicate-suppression record.
+- `state/runs/*.json` stores per-run summaries, including zero-new-paper runs.
+- `logs/history.log` is append-only.
+- `logs/last-run.log` is replaced on every run.
+- `tmp/paper_summariser/prompt.txt` is the optional prompt-debug artifact when enabled.
+
+## Launchd
+
+Render a local plist from the public template:
+
+```bash
+./scripts/launchd/render-plist.sh
+```
+
+This writes a machine-local plist to `tmp/launchd/com.user.re-ass.plist` using your actual repo path and `uv` binary path, without committing either.
+
+## Validation
+
+```bash
+uv run python -m compileall src tests
+uv run pytest
+```

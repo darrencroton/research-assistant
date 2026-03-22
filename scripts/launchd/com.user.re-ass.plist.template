@@ -6,16 +6,14 @@
     <string>com.user.re-ass</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/uv</string>
+        <string>__UV_BIN__</string>
         <string>run</string>
         <string>--project</string>
-        <string>/Users/dcroton/Local/git-repos/re-ass</string>
-        <string>python</string>
-        <string>-m</string>
-        <string>re_ass</string>
+        <string>__REPO_ROOT__</string>
+        <string>re-ass</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/dcroton/Local/git-repos/re-ass</string>
+    <string>__REPO_ROOT__</string>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -24,8 +22,8 @@
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/tmp/re-ass.log</string>
+    <string>__LOG_DIR__/launchd.stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/re-ass.err</string>
+    <string>__LOG_DIR__/launchd.stderr.log</string>
 </dict>
 </plist>

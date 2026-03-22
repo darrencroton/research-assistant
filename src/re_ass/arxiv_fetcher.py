@@ -1,3 +1,5 @@
+"""arXiv paper fetching, ranking, and selection for re-ass."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
@@ -8,7 +10,8 @@ import re
 
 import arxiv
 
-from re_ass.models import ArxivPaper, PreferenceConfig, sanitize_note_name
+from re_ass.models import ArxivPaper, PreferenceConfig
+from re_ass.paper_identity import derive_identity
 
 
 LOGGER = logging.getLogger(__name__)
@@ -182,8 +185,9 @@ class ArxivFetcher:
         preferences: PreferenceConfig,
         max_papers: int,
         *,
-        excluded_note_names: set[str] | None = None,
+        excluded_paper_keys: set[str] | None = None,
     ) -> list[ArxivPaper]:
+        """Fetch, rank, and select top papers, suppressing duplicates by paper_key."""
         query = build_category_query(preferences.categories)
         search = arxiv.Search(
             query=query,
@@ -201,7 +205,7 @@ class ArxivFetcher:
             None,
         )
         if self.fallback_window is None:
-            return self._select_unseen_papers(primary_ranked, max_papers, excluded_note_names)
+            return self._select_unseen_papers(primary_ranked, max_papers, excluded_paper_keys)
 
         fallback_cutoff = window_end - self.fallback_window
         fallback_ranked = rank_papers(
@@ -212,7 +216,7 @@ class ArxivFetcher:
         combined = self._select_unseen_papers(
             [*primary_ranked, *fallback_ranked],
             max_papers,
-            excluded_note_names,
+            excluded_paper_keys,
         )
 
         if combined and len(primary_ranked) < len(combined):
@@ -229,19 +233,25 @@ class ArxivFetcher:
         self,
         ranked_papers: Iterable[ArxivPaper],
         max_papers: int,
-        excluded_note_names: set[str] | None,
+        excluded_paper_keys: set[str] | None,
     ) -> list[ArxivPaper]:
+        """Select unseen papers, suppressing duplicates by paper_key."""
         combined: list[ArxivPaper] = []
-        seen_entry_ids: set[str] = set()
-        excluded = {name.casefold() for name in (excluded_note_names or set())}
+        seen_keys: set[str] = set()
+        excluded = excluded_paper_keys or set()
 
         for paper in ranked_papers:
-            if paper.entry_id in seen_entry_ids:
+            try:
+                identity = derive_identity(paper)
+            except ValueError as error:
+                LOGGER.warning("Skipping paper with invalid arXiv identity (%s): %s", paper.title, error)
                 continue
-            if sanitize_note_name(paper.title).casefold() in excluded:
+            if identity.paper_key in seen_keys:
+                continue
+            if identity.paper_key in excluded:
                 continue
             combined.append(paper)
-            seen_entry_ids.add(paper.entry_id)
+            seen_keys.add(identity.paper_key)
             if len(combined) == max_papers:
                 break
 

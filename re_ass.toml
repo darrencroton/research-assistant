@@ -1,12 +1,34 @@
-[vault]
-root = "obsidian_vault"
-daily_dir = "Daily"
-papers_dir = "Papers"
-weekly_archive_dir = "Weekly_Archive"
-templates_dir = "Templates"
-preferences_file = "re-ass-preferences.md"
+[output]
+root = "output"
+papers_dir = "papers"
+daily_dir = "daily"
+weekly_dir = "weekly"
+
+[processed]
+root = "processed"
+
+[state]
+root = "state"
+papers_dir = "papers"
+runs_dir = "runs"
+
+[logs]
+root = "logs"
+history_file = "history.log"
+last_run_file = "last-run.log"
+
+[templates]
+daily_template = "templates/daily-note-template.md"
+weekly_template = "templates/weekly-note-template.md"
+
+[preferences]
+file = "preferences.md"
+
+[notes]
+link_style = "wikilink"
 weekly_note_file = "this-weeks-arxiv-papers.md"
-weekly_template_file = "weekly-arxiv-template.md"
+rotation_day = "monday"
+archive_name_pattern = "{date}-weekly-arxiv.md"
 
 [arxiv]
 max_papers = 3
@@ -25,7 +47,7 @@ max_output_tokens = 12288
 temperature = 0.2
 retry_attempts = 3
 allow_local_paper_note_fallback = true
-prompt_debug_file = "archive/paper_summariser/prompt.txt"
+prompt_debug_file = "tmp/paper_summariser/prompt.txt"
 download_timeout_seconds = 120
 max_pdf_size_mb = 100
 marker_timeout_seconds = 300

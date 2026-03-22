@@ -4,7 +4,7 @@
 
 - GitHub repo name: `research-assistant`
 - Local package / CLI name: `re-ass`
-- Purpose: fetch relevant arXiv papers, generate notes, and update an Obsidian vault
+- Purpose: fetch relevant arXiv papers, generate Markdown notes, and maintain daily/weekly outputs with explicit retained state
 
 ## Core Commands
 
@@ -16,9 +16,15 @@
 ## Important Files
 
 - `re_ass.toml`: main runtime configuration
-- `obsidian_vault/re-ass-preferences.md`: ranked preferences and arXiv categories
+- `preferences.md`: ranked preferences and arXiv categories
+- `templates/daily-note-template.md`: daily note template with managed markers
+- `templates/weekly-note-template.md`: weekly note template with managed markers
+- `scripts/setup.sh`: first-time local bootstrap
+- `scripts/launchd/`: public-safe launchd template and renderer
+- `output/`, `processed/`, `state/`, `logs/`: active runtime directories
+- `tmp/`: local scratch/debug output, never committed
 - `src/re_ass/paper_summariser/`: upstream-derived paper-note pipeline
-- `src/re_ass/`: application code around ranking, orchestration, and vault updates
+- `src/re_ass/`: application code around ranking, orchestration, state, and note updates
 - `docs/`: assumptions, reports, and follow-up notes
 
 ## Working Notes
@@ -26,5 +32,7 @@
 - Keep changes simple and explicit.
 - Prefer deterministic fallbacks over silent failure.
 - Store simulation or retained runtime artifacts under `archive/`.
-- Keep the paper-note path upstream-first: adapt at the orchestrator or vault boundary instead of rewriting the provider/extraction stack.
-- Current follow-up priority: live API-provider validation and faster simulation/backfill replay.
+- Keep the paper-note path upstream-first: adapt at the app boundary instead of rewriting the provider/extraction stack.
+- Paper identity is stable and arXiv-derived; do not fall back to title-based duplicate suppression.
+- Daily and weekly note updates must stay inside managed markers.
+- `state/papers/*.json` is the authoritative completion record; note or PDF presence alone is not.
