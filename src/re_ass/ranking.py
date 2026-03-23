@@ -780,6 +780,17 @@ def _final_selection_system_prompt() -> str:
     )
 
 
+def _final_selection_repair_system_prompt() -> str:
+    return (
+        "You repair invalid JSON emitted by an arXiv paper selector.\n"
+        "Return JSON only. Do not include markdown fences, prose, or commentary.\n"
+        "Use only the provided candidate IDs.\n"
+        "Preserve the previous selection intent where possible.\n"
+        "If an invalid candidate_id clearly refers to one allowed paper by title or rationale, replace it.\n"
+        "If you cannot map an invalid candidate confidently, omit that entry."
+    )
+
+
 def _final_selection_user_prompt(
     preferences: PreferenceConfig,
     candidates: list[RerankedPaper],
@@ -828,6 +839,48 @@ def _final_selection_user_prompt(
     )
 
 
+def _final_selection_repair_user_prompt(
+    preferences: PreferenceConfig,
+    candidates: list[RerankedPaper],
+    *,
+    max_papers: int,
+    invalid_response: str,
+    validation_error: str,
+) -> str:
+    candidate_payload = [
+        {
+            "candidate_id": item.paper_key,
+            "arxiv_id": item.source_id,
+            "title": item.paper.title,
+        }
+        for item in candidates
+    ]
+    return (
+        "<task>\n"
+        f"Repair the invalid final-selection JSON and return at most {max_papers} papers.\n"
+        "Return exactly this JSON object shape:\n"
+        '{"selected_papers":[{"candidate_id":"arxiv:2603.12345","score":97,"rationale":"short reason"}]}\n'
+        "Rules:\n"
+        "- Use only the provided candidate IDs.\n"
+        f"- Select at most {max_papers} papers.\n"
+        "- Preserve the previous ranking intent where possible.\n"
+        "- If an invalid candidate_id cannot be mapped confidently, remove that entry.\n"
+        "</task>\n\n"
+        "<validation_error>\n"
+        f"{validation_error}\n"
+        "</validation_error>\n\n"
+        "<previous_response>\n"
+        f"{invalid_response.strip()}\n"
+        "</previous_response>\n\n"
+        "<preferences_markdown>\n"
+        f"{preferences.raw_text.strip()}\n"
+        "</preferences_markdown>\n\n"
+        "<allowed_candidates_json>\n"
+        f"{json.dumps(candidate_payload, indent=2)}\n"
+        "</allowed_candidates_json>"
+    )
+
+
 def _strip_code_fences(text: str) -> str:
     stripped = text.strip()
     if not stripped.startswith("```"):
@@ -855,6 +908,15 @@ def _load_ranking_payload(response_text: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RankingError("Ranking provider returned a non-object JSON payload.")
     return payload
+
+
+def _selected_entries_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_selected = payload.get("selected_papers")
+    if raw_selected is None:
+        raw_selected = payload.get("ranked_papers")
+    if not isinstance(raw_selected, list):
+        raise RankingError("Ranking payload must contain a 'selected_papers' list.")
+    return raw_selected
 
 
 class PaperRanker:
@@ -966,13 +1028,61 @@ class PaperRanker:
         except Exception as error:
             raise RankingError(f"Ranking provider call failed: {error}") from error
 
-        payload = _load_ranking_payload(response)
-        raw_selected = payload.get("selected_papers")
-        if raw_selected is None:
-            raw_selected = payload.get("ranked_papers")
-        if not isinstance(raw_selected, list):
-            raise RankingError("Ranking payload must contain a 'selected_papers' list.")
+        try:
+            return self._parse_final_selection_payload(response, final_pool, max_papers=max_papers)
+        except RankingError as error:
+            LOGGER.warning("Final selection payload validation failed; retrying once: %s", error)
+            repair_response = self._repair_final_selection_payload(
+                preferences,
+                final_pool,
+                max_papers=max_papers,
+                invalid_response=response,
+                validation_error=str(error),
+            )
+            try:
+                return self._parse_final_selection_payload(repair_response, final_pool, max_papers=max_papers)
+            except RankingError as repair_error:
+                raise RankingError(
+                    f"Ranking payload remained invalid after repair attempt: {repair_error}"
+                ) from repair_error
 
+    def _repair_final_selection_payload(
+        self,
+        preferences: PreferenceConfig,
+        final_pool: list[RerankedPaper],
+        *,
+        max_papers: int,
+        invalid_response: str,
+        validation_error: str,
+    ) -> str:
+        system_prompt = _final_selection_repair_system_prompt()
+        user_prompt = _final_selection_repair_user_prompt(
+            preferences,
+            final_pool,
+            max_papers=max_papers,
+            invalid_response=invalid_response,
+            validation_error=validation_error,
+        )
+        try:
+            return self.provider.process_document(
+                content="",
+                is_pdf=False,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=min(self.config.max_output_tokens, 4096),
+            ).strip()
+        except Exception as error:
+            raise RankingError(f"Ranking repair call failed: {error}") from error
+
+    def _parse_final_selection_payload(
+        self,
+        response_text: str,
+        final_pool: list[RerankedPaper],
+        *,
+        max_papers: int,
+    ) -> list[SelectedPaper]:
+        payload = _load_ranking_payload(response_text)
+        raw_selected = _selected_entries_from_payload(payload)
         by_key = {item.paper_key: item for item in final_pool}
         score_floor = self._effective_min_selection_score(final_pool)
         seen_ids: set[str] = set()

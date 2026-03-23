@@ -23,8 +23,11 @@ from tests.support import make_app_config, make_paper
 
 
 class RecordingProvider:
-    def __init__(self, response: str) -> None:
-        self.response = response
+    def __init__(self, response: str | list[str]) -> None:
+        if isinstance(response, str):
+            self.responses = [response]
+        else:
+            self.responses = list(response)
         self.calls = []
 
     def process_document(self, content, is_pdf, system_prompt, user_prompt, max_tokens=12288):
@@ -37,7 +40,9 @@ class RecordingProvider:
                 "max_tokens": max_tokens,
             }
         )
-        return self.response
+        if not self.responses:
+            raise AssertionError("provider was called more times than expected")
+        return self.responses.pop(0)
 
 
 class StaticRetriever:
@@ -366,13 +371,22 @@ def test_paper_ranker_uses_relaxed_score_floor_for_direct_small_pools(tmp_path) 
 def test_paper_ranker_rejects_unknown_candidate_in_final_selection_payload(tmp_path) -> None:
     paper = make_paper(arxiv_id="2603.40031", title="Only Paper")
     provider = RecordingProvider(
-        json.dumps(
-            {
-                "selected_papers": [
-                    {"candidate_id": "arxiv:2603.49999", "score": 99, "rationale": "Unknown candidate."}
-                ]
-            }
-        )
+        [
+            json.dumps(
+                {
+                    "selected_papers": [
+                        {"candidate_id": "arxiv:2603.49999", "score": 99, "rationale": "Unknown candidate."}
+                    ]
+                }
+            ),
+            json.dumps(
+                {
+                    "selected_papers": [
+                        {"candidate_id": "arxiv:2603.49999", "score": 99, "rationale": "Still wrong."}
+                    ]
+                }
+            ),
+        ]
     )
     retrieved = _retrieved(
         paper,
@@ -398,5 +412,76 @@ def test_paper_ranker_rejects_unknown_candidate_in_final_selection_payload(tmp_p
         {"priorities": ("Agents",), "categories": ("cs.AI",), "raw_text": "1. Agents"},
     )()
 
-    with pytest.raises(RankingError, match="unknown candidate_id"):
+    with pytest.raises(RankingError, match="remained invalid after repair attempt"):
         ranker.select_top_papers(preferences, [paper], max_papers=1)
+    assert len(provider.calls) == 2
+
+
+def test_paper_ranker_repairs_invalid_candidate_id_in_final_selection_payload(tmp_path) -> None:
+    papers = [
+        make_paper(arxiv_id="2603.50041", title="Wrong Turn"),
+        make_paper(arxiv_id="2603.50045", title="Accelerated size evolution in the FirstLight simulations from z=14 to z=5"),
+    ]
+    retrieved = [
+        _retrieved(
+            paper,
+            lexical_score=0.8,
+            semantic_score=0.8,
+            fused_score=0.85,
+            matched_priorities=("JWST",),
+            retrieval_channels=("lexical", "semantic"),
+        )
+        for paper in papers
+    ]
+    reranked = [
+        _reranked(retrieved[0], rerank_score=0.82, rationale="Good fit."),
+        _reranked(retrieved[1], rerank_score=0.91, rationale="Best size-evolution fit."),
+    ]
+    provider = RecordingProvider(
+        [
+            json.dumps(
+                {
+                    "selected_papers": [
+                        {
+                            "candidate_id": "arxiv:2603.50044",
+                            "score": 92,
+                            "rationale": "High-redshift galaxy size evolution from z=14 to z=5 in FirstLight simulations.",
+                        }
+                    ]
+                }
+            ),
+            json.dumps(
+                {
+                    "selected_papers": [
+                        {
+                            "candidate_id": "arxiv:2603.50045",
+                            "score": 92,
+                            "rationale": "High-redshift galaxy size evolution from z=14 to z=5 in FirstLight simulations.",
+                        }
+                    ]
+                }
+            ),
+        ]
+    )
+    ranker = PaperRanker(
+        provider=provider,
+        config=make_app_config(tmp_path).llm,
+        retrieval_pool_size=12,
+        final_pool_size=6,
+        min_selection_score=80.0,
+        retriever=StaticRetriever(retrieved),
+        reranker=StaticReranker(reranked),
+    )
+    preferences = type(
+        "Preferences",
+        (),
+        {"priorities": ("JWST",), "categories": ("astro-ph.GA",), "raw_text": "1. JWST and high-redshift galaxies"},
+    )()
+
+    selection = ranker.select_top_papers(preferences, papers, max_papers=1)
+
+    assert [paper.title for paper in selection.selected_papers] == [
+        "Accelerated size evolution in the FirstLight simulations from z=14 to z=5"
+    ]
+    assert len(provider.calls) == 2
+    assert "validation_error" in provider.calls[1]["user_prompt"]
