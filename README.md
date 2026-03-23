@@ -6,13 +6,6 @@ It uses the same core engine as [Science Paper Summariser](https://github.com/da
 
 The default project knowledge is tuned for `astro-ph`, but can easily be adapted for other research fields.
 
-It writes:
-
-- paper summaries to `output/summaries/`
-- daily notes to `output/daily-notes/`
-- a rolling weekly note to `output/weekly-notes/`
-- downloaded PDFs to `output/pdfs/`
-
 ## Quickstart
 
 ### Requirements
