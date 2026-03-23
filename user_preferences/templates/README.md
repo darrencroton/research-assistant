@@ -18,7 +18,7 @@ daily_template = "/path/to/your/daily-template.md"
 weekly_template = "/path/to/your/weekly-template.md"
 ```
 
-Those template files must already exist. `re-ass` uses them to create output notes, but it does not create the template files for you.
+Those template files must already exist. Running the setup script will create default templates to get you going, but you'll probably want to customise things.
 
 On first use, `re-ass` reads those template files and writes output notes into your configured output directories.
 
@@ -37,8 +37,7 @@ That section is where `re-ass` writes the selected top paper for the day.
 Important details:
 
 - Keep the heading text exact, including capitalisation.
-- The current default uses one space after `##`. Copy it exactly if you keep the default setting.
-- Anything under that heading is managed by `re-ass` and may be replaced.
+- Anything under that specific heading is managed by `re-ass` and may be replaced.
 - Content outside that heading is left alone.
 - If the heading is missing, `re-ass` appends a fresh managed section at the end of the daily note.
 
@@ -142,6 +141,6 @@ The `---` separator is optional, but the built-in template uses it and it reads 
 - Renaming the headings configured in `notes.daily_top_paper_heading`, `notes.weekly_synthesis_heading`, or `notes.weekly_additions_heading`
 - Removing the first top-level `#` heading from the weekly template
 - Putting important manual notes inside sections that `re-ass` manages
-- Assuming the app uses invisible markers; it currently uses exact heading names instead
+- Assuming the app uses invisible markers; it uses exact heading names instead
 
 If you want a safe starting point, copy the built-in templates in this directory and modify everything except the managed headings, or update the heading settings at the same time.
