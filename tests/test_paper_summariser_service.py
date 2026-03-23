@@ -1,7 +1,14 @@
 from pathlib import Path
 
 from re_ass.paper_summariser.providers.base import Provider
-from re_ass.paper_summariser.service import PaperSummariser
+from re_ass.paper_summariser.service import (
+    PaperSummariser,
+    ProjectKnowledge,
+    SourceMetadata,
+    create_system_prompt,
+    create_user_prompt,
+    read_project_knowledge,
+)
 from tests.support import make_paper, make_app_config
 
 
@@ -61,6 +68,7 @@ def test_summarise_source_uses_extracted_text(tmp_path: Path) -> None:
     assert "## Key Ideas" in result.raw_summary
     assert result.pdf_url == "https://arxiv.org/pdf/1234.5678.pdf"
     assert provider.calls[0]["content"] == "arXiv: 1234.5678\nExtracted paper text."
+    assert "Canonical paper link: https://arxiv.org/abs/1234.5678" in str(provider.calls[0]["user_prompt"])
 
 
 def test_summarise_source_uses_direct_pdf_when_provider_supports_it(tmp_path: Path) -> None:
@@ -93,3 +101,32 @@ def test_summarise_source_uses_direct_pdf_when_provider_supports_it(tmp_path: Pa
     assert provider.calls[0]["content"] == b"%PDF-1.4 direct pdf"
     assert provider.calls[0]["is_pdf"] is True
     assert "---BEGIN PAPER---" not in str(provider.calls[0]["user_prompt"])
+
+
+def test_read_project_knowledge_loads_prompt_files() -> None:
+    project_knowledge = read_project_knowledge()
+
+    assert isinstance(project_knowledge, ProjectKnowledge)
+    assert project_knowledge.keywords
+    assert "$KEYWORDS" in project_knowledge.system_prompt_template
+    assert "$SUMMARY_TEMPLATE" in project_knowledge.user_prompt_template
+
+
+def test_create_prompt_uses_external_prompt_templates() -> None:
+    system_prompt = create_system_prompt("keyword list", "system $KEYWORDS")
+    user_prompt = create_user_prompt(
+        "body text",
+        "summary template",
+        "user $SUMMARY_TEMPLATE $SOURCE_METADATA_BLOCK$PAPER_INPUT_BLOCK",
+        source_metadata=SourceMetadata(
+            source_type="arxiv",
+            identifier="2312.5678",
+            canonical_url="https://arxiv.org/abs/2312.5678",
+            published_label="December 2023",
+        ),
+    )
+
+    assert system_prompt == "system keyword list"
+    assert "summary template" in user_prompt
+    assert "Published line date: December 2023" in user_prompt
+    assert "---BEGIN PAPER---" in user_prompt

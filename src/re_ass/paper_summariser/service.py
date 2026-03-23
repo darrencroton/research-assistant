@@ -9,6 +9,7 @@ import logging
 import os
 from pathlib import Path
 import re
+from string import Template
 import tempfile
 import time
 from urllib.error import HTTPError, URLError
@@ -85,6 +86,14 @@ class GeneratedPaperSummary:
     raw_summary: str
     source_metadata: SourceMetadata
     pdf_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectKnowledge:
+    keywords: str
+    paper_summary_template: str
+    system_prompt_template: str
+    user_prompt_template: str
 
 
 def build_pdf_url(paper_url: str) -> str:
@@ -166,7 +175,7 @@ class PaperSummariser:
             return self.summarise_source(paper, source_path)
 
     def summarise_source(self, paper: ArxivPaper, source_path: Path) -> GeneratedPaperSummary:
-        keywords, template = read_project_knowledge()
+        project_knowledge = read_project_knowledge()
         pdf_url = build_pdf_url(paper.arxiv_url)
 
         content, error = self.input_reader(source_path, self.provider, self.config)
@@ -184,10 +193,14 @@ class PaperSummariser:
             paper_text = content
 
         source_metadata = extract_source_metadata(source_path, paper_text)
-        system_prompt = create_system_prompt(keywords)
+        system_prompt = create_system_prompt(
+            project_knowledge.keywords,
+            project_knowledge.system_prompt_template,
+        )
         user_prompt = create_user_prompt(
             paper_text,
-            template,
+            project_knowledge.paper_summary_template,
+            project_knowledge.user_prompt_template,
             source_metadata=source_metadata,
         )
         write_debug_prompt(self.config.prompt_debug_file, system_prompt, user_prompt)
@@ -211,13 +224,19 @@ class PaperSummariser:
         )
 
 
-def read_project_knowledge() -> tuple[str, str]:
-    """Read keywords and template files needed for prompts."""
-    keywords_path = _KNOWLEDGE_DIR / "astronomy-keywords.txt"
-    template_path = _KNOWLEDGE_DIR / "paper-summary-template.md"
-    return (
-        keywords_path.read_text(encoding="utf-8"),
-        template_path.read_text(encoding="utf-8"),
+def read_project_knowledge() -> ProjectKnowledge:
+    """Read project knowledge and prompt templates needed for summarisation."""
+    keywords_path = _KNOWLEDGE_DIR / "keywords.txt"
+    if not keywords_path.exists():
+        keywords_path = _KNOWLEDGE_DIR / "astronomy-keywords.txt"
+    summary_template_path = _KNOWLEDGE_DIR / "paper-summary-template.md"
+    system_prompt_path = _KNOWLEDGE_DIR / "system-prompt.md"
+    user_prompt_path = _KNOWLEDGE_DIR / "user-prompt.md"
+    return ProjectKnowledge(
+        keywords=keywords_path.read_text(encoding="utf-8"),
+        paper_summary_template=summary_template_path.read_text(encoding="utf-8"),
+        system_prompt_template=system_prompt_path.read_text(encoding="utf-8"),
+        user_prompt_template=user_prompt_path.read_text(encoding="utf-8"),
     )
 
 
@@ -372,86 +391,51 @@ def extract_source_metadata(input_path: Path, paper_text: str) -> SourceMetadata
     return SourceMetadata()
 
 
-def create_system_prompt(keywords: str) -> str:
+def create_system_prompt(keywords: str, prompt_template: str) -> str:
+    return Template(prompt_template).substitute(KEYWORDS=keywords)
+
+
+def _create_source_metadata_block(source_metadata: SourceMetadata | None) -> str:
+    if not source_metadata or not source_metadata.canonical_url:
+        return ""
+
+    block = (
+        "<source_metadata>\n"
+        f"Detected source identifier: {source_metadata.source_type}:{source_metadata.identifier}\n"
+        f"Canonical paper link: {source_metadata.canonical_url}\n"
+    )
+    if source_metadata.published_label:
+        block += f"Published line date: {source_metadata.published_label}\n"
+    block += "You MUST use this exact link in the Published line.\n"
+    if source_metadata.published_label:
+        block += "You MUST use this exact month and year in the Published line.\n"
+    block += "</source_metadata>\n\n"
+    return block
+
+
+def _create_paper_input_block(paper_text: str) -> str:
+    if not paper_text:
+        return ""
     return (
-        "<role>\n"
-        "You are an esteemed professor at Harvard University "
-        "specializing in analyzing research papers. Your are an expert in \n"
-        "identifying key scientific results and their significance.\n"
-        "</role>\n\n"
-        "<rules>\n"
-        "1. Write only in UK English using clear technical language\n"
-        "2. Use markdown formatting throughout\n"
-        "3. Use LaTeX for all mathematical expressions\n"
-        "4. Only include content from the provided paper\n"
-        "5. Every bullet point must have a supporting footnote\n"
-        "6. Footnotes must contain EXACT quotes - never paraphrase\n"
-        "7. Always enclose footnote quotes in quotation marks\n"
-        "8. Include page/section reference for every quote\n"
-        "9. Use bold for key terms on first mention\n"
-        "10. Use italics for emphasis and paper names\n"
-        "11. If you cannot find an exact supporting quote, do not make the statement\n"
-        "12. ALWAYS include a Glossary section with a table of technical terms\n"
-        "</rules>\n\n"
-        "<knowledgeBase>\n"
-        f"Available astronomy keywords by category:\n{keywords}\n"
-        "</knowledgeBase>"
+        "<input>\n"
+        "Paper to summarize:\n\n"
+        f"---BEGIN PAPER---\n{paper_text}\n---END PAPER---\n"
+        "</input>"
     )
 
 
 def create_user_prompt(
     paper_text: str,
     template: str,
+    prompt_template: str,
     *,
     source_metadata: SourceMetadata | None = None,
 ) -> str:
-    base_prompt = (
-        "<task>\n"
-        "Summarize this research paper following these EXACT requirements:\n\n"
-        "<format>\n"
-        "1. THE VERY FIRST LINE must be the paper title as '# Title'\n"
-        "2. NO TEXT before the title - not even a greeting\n"
-        "3. Below title, exactly one blank line, then:\n"
-        "   - Line starting 'Authors: ' with FULL author list\n"
-        "   - Line starting 'Published: ' with month, year, and link\n"
-        "   - One blank line before starting sections\n"
-        "4. Include EVERY author (surname and initials with period, comma separated)\n"
-        "5. Never truncate author list with 'et al.'\n"
-        "6. MUST include publication month and year\n"
-        "7. Follow the exact section order specified\n"
-        "</format>\n\n"
-        "<template>\n"
-        f"Use this exact structure:\n{template}\n"
-        "</template>\n\n"
-        "<tags>\n"
-        "The Tags section must have two parts:\n"
-        "1. First line: Hashtags for telescopes, surveys, datasets, models (proper nouns only)\n"
-        "2. Second line: Science area hashtags (use ONLY provided keywords, only the best ones)\n"
-        "</tags>\n"
-        "</task>\n\n"
+    return Template(prompt_template).substitute(
+        SUMMARY_TEMPLATE=template,
+        SOURCE_METADATA_BLOCK=_create_source_metadata_block(source_metadata),
+        PAPER_INPUT_BLOCK=_create_paper_input_block(paper_text),
     )
-
-    if source_metadata and source_metadata.canonical_url:
-        base_prompt += (
-            "<source_metadata>\n"
-            f"Detected source identifier: {source_metadata.source_type}:{source_metadata.identifier}\n"
-            f"Canonical paper link: {source_metadata.canonical_url}\n"
-        )
-        if source_metadata.published_label:
-            base_prompt += f"Published line date: {source_metadata.published_label}\n"
-        base_prompt += "You MUST use this exact link in the Published line.\n"
-        if source_metadata.published_label:
-            base_prompt += "You MUST use this exact month and year in the Published line.\n"
-        base_prompt += "</source_metadata>\n\n"
-
-    if paper_text:
-        base_prompt += (
-            "<input>\n"
-            "Paper to summarize:\n\n"
-            f"---BEGIN PAPER---\n{paper_text}\n---END PAPER---\n"
-            "</input>"
-        )
-    return base_prompt
 
 
 def write_debug_prompt(prompt_path: Path, system_prompt: str, user_prompt: str) -> None:
