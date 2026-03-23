@@ -24,40 +24,6 @@ _ROTATION_DAYS = {
     "sunday": 6,
 }
 
-DEFAULT_DAILY_TEMPLATE = """# {{date}}
-
-##  TODAY'S TOP PAPER
-"""
-
-DEFAULT_WEEKLY_TEMPLATE = """# ARXIV PAPERS FOR THE WEEK
-
-## SYNTHESIS
-*(A synthesis of this week's papers will be automatically generated here. Max 100 words.)*
-
----
-## DAILY ADDITIONS
-"""
-
-DEFAULT_PREFERENCES_FILE = """# Arxiv Priorities
-
-## Categories
-- astro-ph.CO
-- astro-ph.GA
-
-## Priorities - Science
-1. High-redshift galaxy formation and early galaxy assembly: z>4 galaxies, cosmic dawn, reionization-era systems, JWST high-z observations
-2. Little red dots, LRDs, and compact dusty red JWST sources at high redshift
-3. Black holes and AGN in galaxies: SMBH growth, AGN triggering, AGN feedback, JWST AGN, merger-driven AGN; not GW-only MBH binary papers
-4. Galaxy environments and environmental effects: groups, clusters, filaments, voids, assembly bias, environmental quenching, merger environments
-5. The intracluster and intragroup light: ICL, IGL, diffuse stellar light, stripped stars, stellar halos in groups and clusters, BCG outskirts, cD envelopes, and the build-up of diffuse light in dense environments
-
-## Priorities - Methods
-1. Semi-analytic galaxy formation models: semi-analytic models, SAMs, L-Galaxies, SHARK, SAGE, the Somerville model, and model predictions
-2. Cosmological N-body and hydrodynamic simulations: large-volume structure-formation simulations, zoom-in simulations, baryonic galaxy-formation runs, halo and subhalo evolution, mock observations, and comparisons between simulations and observations
-3. Two-point correlation functions and galaxy clustering: 2PCF, correlation functions, cross-correlation functions, HOD, and halo occupation
-4. Large observational surveys: SDSS, DESI, HSC, LSST, Euclid, Roman, JWST legacy fields, wide-field multiwavelength surveys, survey catalogues, and statistically powerful survey samples
-"""
-
 _DAILY_TEMPLATE_DATE_PATTERN = re.compile(r"\{\{\s*date(?:\s*:\s*([^}]+?))?\s*\}\}")
 
 
@@ -235,6 +201,13 @@ def _render_daily_template(template: str, run_date: date) -> str:
     return _DAILY_TEMPLATE_DATE_PATTERN.sub(replace_date, template)
 
 
+def _require_file(path: Path, description: str) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"{description} not found: {path}")
+    if not path.is_file():
+        raise FileNotFoundError(f"{description} is not a file: {path}")
+
+
 class NoteManager:
     """Creates and updates user-facing notes through managed heading sections."""
 
@@ -247,16 +220,8 @@ class NoteManager:
         self.config.daily_notes_dir.mkdir(parents=True, exist_ok=True)
         self.config.weekly_notes_dir.mkdir(parents=True, exist_ok=True)
 
-        self.config.daily_template.parent.mkdir(parents=True, exist_ok=True)
-        self.config.weekly_template.parent.mkdir(parents=True, exist_ok=True)
-        self.config.preferences_file.parent.mkdir(parents=True, exist_ok=True)
-
-        if not self.config.daily_template.exists():
-            self.config.daily_template.write_text(DEFAULT_DAILY_TEMPLATE, encoding="utf-8")
-        if not self.config.weekly_template.exists():
-            self.config.weekly_template.write_text(DEFAULT_WEEKLY_TEMPLATE, encoding="utf-8")
-        if not self.config.preferences_file.exists():
-            self.config.preferences_file.write_text(DEFAULT_PREFERENCES_FILE, encoding="utf-8")
+        _require_file(self.config.daily_template, "Daily template")
+        _require_file(self.config.weekly_template, "Weekly template")
 
         self.ensure_weekly_note_exists()
 
@@ -291,7 +256,7 @@ class NoteManager:
 
     def read_weekly_synthesis(self) -> str:
         text = self.ensure_weekly_note_exists().read_text(encoding="utf-8")
-        return _read_section(text, "## SYNTHESIS")
+        return _read_section(text, self.config.weekly_synthesis_heading)
 
     def update_daily_note(self, run_date: date, top_paper: ProcessedPaper) -> Path:
         daily_path = self.config.daily_notes_dir / f"{run_date.isoformat()}.md"
@@ -316,7 +281,7 @@ class NoteManager:
                 "[[this-weeks-arxiv-papers|See all of this week's arXiv papers]]",
             ]
         )
-        updated = _replace_section(text, "##  TODAY'S TOP PAPER", block)
+        updated = _replace_section(text, self.config.daily_top_paper_heading, block)
         daily_path.write_text(updated.rstrip() + "\n", encoding="utf-8")
         return daily_path
 
@@ -324,9 +289,9 @@ class NoteManager:
         weekly_path = self.ensure_weekly_note_exists()
         text = weekly_path.read_text(encoding="utf-8")
         updated = _replace_weekly_title(text, _weekly_title(run_date, self.config.rotation_day))
-        updated = _replace_section(updated, "## SYNTHESIS", synthesis.strip())
+        updated = _replace_section(updated, self.config.weekly_synthesis_heading, synthesis.strip())
 
-        existing_additions = _read_section(updated, "## DAILY ADDITIONS")
+        existing_additions = _read_section(updated, self.config.weekly_additions_heading)
         day_heading = _format_day_heading(run_date)
         entries = [
             "\n".join(
@@ -340,7 +305,7 @@ class NoteManager:
         ]
         day_block = "\n".join([f"### {day_heading}", "", "\n\n".join(entries)])
         additions = _upsert_day_block(existing_additions, day_heading, day_block)
-        updated = _replace_section(updated, "## DAILY ADDITIONS", additions)
+        updated = _replace_section(updated, self.config.weekly_additions_heading, additions)
 
         weekly_path.write_text(updated.rstrip() + "\n", encoding="utf-8")
         return weekly_path

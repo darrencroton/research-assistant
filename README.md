@@ -122,9 +122,15 @@ Main config: `user_preferences/settings.toml`
 - `[output]`: where summaries, notes, and PDFs are written
 - `[templates]`: which daily and weekly templates to use
 - `[preferences]`: which preferences file to read
-- `[notes]`: link style, weekly filename, rotation day, archive naming
-- `[arxiv]`: limits, categories, and ranking threshold
+- `[notes]`: link style, weekly filename, rotation day, archive naming, managed headings
+- `[arxiv]`: limits and ranking threshold
 - `[llm]`: provider and model settings
+
+`[notes]` must define these managed-heading settings:
+
+- `daily_top_paper_heading`
+- `weekly_synthesis_heading`
+- `weekly_additions_heading`
 
 `[llm]` also supports an optional `effort` setting for CLI providers:
 
@@ -175,13 +181,13 @@ Daily note templates support:
 
 Required headings:
 
-- daily template: `##  TODAY'S TOP PAPER`
-- weekly template: `## SYNTHESIS`
-- weekly template: `## DAILY ADDITIONS`
+- daily template: whatever `notes.daily_top_paper_heading` is set to, default `## TODAY'S TOP PAPER`
+- weekly template: whatever `notes.weekly_synthesis_heading` is set to, default `## SYNTHESIS`
+- weekly template: whatever `notes.weekly_additions_heading` is set to, default `## DAILY ADDITIONS`
 
 The first `#` heading in the weekly template is also rewritten to include the current week range.
 
-Content outside those managed sections is left unchanged. For full examples and common mistakes, see:
+Content outside those managed sections is left unchanged. If `user_preferences/settings.toml` or `user_preferences/preferences.md` is missing, `re-ass` now fails fast instead of recreating them at runtime. For full examples and common mistakes, see:
 
 - [Custom daily and weekly templates](user_preferences/templates/README.md)
 

@@ -9,6 +9,43 @@ from re_ass.paper_identity import derive_identity
 from re_ass.settings import AppConfig, LlmConfig
 
 
+def _seed_test_user_files(config: AppConfig) -> None:
+    config.daily_template.parent.mkdir(parents=True, exist_ok=True)
+    config.weekly_template.parent.mkdir(parents=True, exist_ok=True)
+    config.preferences_file.parent.mkdir(parents=True, exist_ok=True)
+
+    if not config.daily_template.exists():
+        config.daily_template.write_text(
+            "# {{date}}\n\n" + config.daily_top_paper_heading + "\n",
+            encoding="utf-8",
+        )
+    if not config.weekly_template.exists():
+        config.weekly_template.write_text(
+            "\n".join(
+                [
+                    "# ARXIV PAPERS FOR THE WEEK",
+                    "",
+                    config.weekly_synthesis_heading,
+                    "*(A synthesis of this week's papers will be automatically generated here. Max 100 words.)*",
+                    "",
+                    "---",
+                    config.weekly_additions_heading,
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+    if not config.preferences_file.exists():
+        config.preferences_file.write_text(
+            "# Arxiv Priorities\n\n"
+            "## Categories\n"
+            "- astro-ph.CO\n\n"
+            "## Priorities\n"
+            "1. Example priority\n",
+            encoding="utf-8",
+        )
+
+
 def make_app_config(tmp_path: Path, **overrides) -> AppConfig:
     config = AppConfig(
         project_root=tmp_path,
@@ -23,17 +60,19 @@ def make_app_config(tmp_path: Path, **overrides) -> AppConfig:
         logs_root=tmp_path / "logs",
         history_log_file=tmp_path / "logs" / "history.log",
         last_run_log_file=tmp_path / "logs" / "last-run.log",
-        daily_template=tmp_path / "user_preferences" / "daily-note-template.md",
-        weekly_template=tmp_path / "user_preferences" / "weekly-note-template.md",
+        daily_template=tmp_path / "user_preferences" / "templates" / "daily-note-template.md",
+        weekly_template=tmp_path / "user_preferences" / "templates" / "weekly-note-template.md",
         preferences_file=tmp_path / "user_preferences" / "preferences.md",
         link_style="wikilink",
         weekly_note_file="this-weeks-arxiv-papers.md",
         rotation_day="monday",
         archive_name_pattern="{date}-weekly-arxiv.md",
+        daily_top_paper_heading="## TODAY'S TOP PAPER",
+        weekly_synthesis_heading="## SYNTHESIS",
+        weekly_additions_heading="## DAILY ADDITIONS",
         max_papers=10,
         arxiv_page_size=50,
         min_selection_score=75.0,
-        default_categories=("astro-ph.CO",),
         llm=LlmConfig(
             mode="cli",
             provider="claude",
@@ -50,7 +89,9 @@ def make_app_config(tmp_path: Path, **overrides) -> AppConfig:
             ollama_base_url="http://localhost:11434",
         ),
     )
-    return replace(config, **overrides)
+    config = replace(config, **overrides)
+    _seed_test_user_files(config)
+    return config
 
 
 def make_paper(

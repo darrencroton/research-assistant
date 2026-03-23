@@ -1,3 +1,3 @@
 # {{date}}
 
-##  TODAY'S TOP PAPER
+## TODAY'S TOP PAPER

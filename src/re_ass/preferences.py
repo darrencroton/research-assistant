@@ -30,9 +30,14 @@ def _section_from_heading(heading: str) -> str:
     return "ignore"
 
 
-def load_preferences(preferences_path: Path, default_categories: tuple[str, ...]) -> PreferenceConfig:
+def load_preferences(preferences_path: Path) -> PreferenceConfig:
     """Parse a Markdown preferences file into a PreferenceConfig."""
-    lines = preferences_path.read_text(encoding="utf-8").splitlines()
+    try:
+        lines = preferences_path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError as error:
+        raise FileNotFoundError(
+            f"Preferences file not found: {preferences_path}. Run ./scripts/setup.sh or create it from user_preferences/defaults/preferences.md."
+        ) from error
 
     categories: list[str] = []
     priorities: list[str] = []
@@ -62,16 +67,18 @@ def load_preferences(preferences_path: Path, default_categories: tuple[str, ...]
         if bullet_match and current_section == "categories":
             categories.append(bullet_match.group("value").strip())
 
+    if not categories:
+        raise ValueError(
+            f"No arXiv categories found in {preferences_path}. Add at least one bullet under a categories heading."
+        )
     if not priorities:
-        raise ValueError(f"No priorities found in {preferences_path}.")
-
-    final_categories = tuple(categories or default_categories)
-    if not final_categories:
-        raise ValueError("No arXiv categories configured.")
+        raise ValueError(
+            f"No priorities found in {preferences_path}. Add a numbered list under a priorities heading."
+        )
 
     return PreferenceConfig(
         priorities=tuple(priorities),
-        categories=final_categories,
+        categories=tuple(categories),
         science_priorities=tuple(science_priorities),
         method_priorities=tuple(method_priorities),
     )

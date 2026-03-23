@@ -2,7 +2,7 @@
 
 `re-ass` can use your own Markdown note templates, including templates stored in an Obsidian vault or any other notes directory.
 
-The important point is that `re-ass` does not guess where to insert content. It updates specific sections identified by exact heading text. If those headings are missing or renamed, `re-ass` appends its managed section at the end of the note instead of updating the place you intended.
+The important point is that `re-ass` does not guess where to insert content. It updates specific sections identified by the heading text configured in `user_preferences/settings.toml`. If those headings are missing or renamed, `re-ass` appends its managed section at the end of the note instead of updating the place you intended.
 
 ## How template selection works
 
@@ -22,10 +22,12 @@ On first use, `re-ass` reads those template files and writes output notes into y
 
 ## Daily template requirements
 
-Your daily template must contain this exact heading:
+Your daily template must contain the heading configured as `notes.daily_top_paper_heading`.
+
+The current default is:
 
 ```markdown
-##  TODAY'S TOP PAPER
+## TODAY'S TOP PAPER
 ```
 
 That section is where `re-ass` writes the selected top paper for the day.
@@ -33,7 +35,7 @@ That section is where `re-ass` writes the selected top paper for the day.
 Important details:
 
 - Keep the heading text exact, including capitalisation.
-- The built-in template currently uses two spaces after `##`. Copy it exactly to avoid mismatch.
+- The current default uses two spaces after `##`. Copy it exactly if you keep the default setting.
 - Anything under that heading is managed by `re-ass` and may be replaced.
 - Content outside that heading is left alone.
 - If the heading is missing, `re-ass` appends a fresh managed section at the end of the daily note.
@@ -56,14 +58,16 @@ Daily templates can use:
 
 ## Notes
 
-##  TODAY'S TOP PAPER
+## TODAY'S TOP PAPER
 
 ## Journal
 ```
 
 ## Weekly template requirements
 
-Your weekly template must contain these exact headings:
+Your weekly template must contain the headings configured as `notes.weekly_synthesis_heading` and `notes.weekly_additions_heading`.
+
+The current defaults are:
 
 ```markdown
 ## SYNTHESIS
@@ -73,8 +77,8 @@ Your weekly template must contain these exact headings:
 Important details:
 
 - `re-ass` rewrites the first `#` title in the file to include the current week range.
-- The `## SYNTHESIS` section is managed by `re-ass` and replaced with the current weekly synthesis.
-- The `## DAILY ADDITIONS` section is managed by `re-ass` and updated with per-day paper entries such as `### Monday 23rd`.
+- The synthesis heading section is managed by `re-ass` and replaced with the current weekly synthesis.
+- The daily additions heading section is managed by `re-ass` and updated with per-day paper entries such as `### Monday 23rd`.
 - Content outside those sections is left alone.
 - If one of those headings is missing, `re-ass` appends that managed section at the end of the weekly note.
 
@@ -110,11 +114,11 @@ The `---` separator is optional, but the built-in template uses it and it reads 
 
 ### Weekly note synthesis
 
-`re-ass` writes a short rolling synthesis for the current week into `## SYNTHESIS`.
+`re-ass` writes a short rolling synthesis for the current week into the heading configured by `notes.weekly_synthesis_heading`.
 
 ### Weekly daily additions
 
-`re-ass` appends or updates day blocks under `## DAILY ADDITIONS`, for example:
+`re-ass` appends or updates day blocks under the heading configured by `notes.weekly_additions_heading`, for example:
 
 ```markdown
 ### Monday 23rd
@@ -133,9 +137,9 @@ The `---` separator is optional, but the built-in template uses it and it reads 
 
 ## Common mistakes
 
-- Renaming `##  TODAY'S TOP PAPER`, `## SYNTHESIS`, or `## DAILY ADDITIONS`
+- Renaming the headings configured in `notes.daily_top_paper_heading`, `notes.weekly_synthesis_heading`, or `notes.weekly_additions_heading`
 - Removing the first top-level `#` heading from the weekly template
 - Putting important manual notes inside sections that `re-ass` manages
 - Assuming the app uses invisible markers; it currently uses exact heading names instead
 
-If you want a safe starting point, copy the built-in templates in this directory and modify everything except the managed headings.
+If you want a safe starting point, copy the built-in templates in this directory and modify everything except the managed headings, or update the heading settings at the same time.

@@ -1,19 +1,29 @@
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from re_ass.note_manager import NoteManager
 from tests.support import make_app_config, make_processed_paper
 
 
-def test_bootstrap_seeds_preferences_templates_and_weekly_note(tmp_path: Path) -> None:
+def test_bootstrap_prepares_output_dirs_and_weekly_note(tmp_path: Path) -> None:
     manager = NoteManager(make_app_config(tmp_path))
 
     manager.bootstrap()
 
-    assert manager.config.preferences_file.exists()
-    assert manager.config.daily_template.exists()
-    assert manager.config.weekly_template.exists()
+    assert manager.config.daily_notes_dir.exists()
+    assert manager.config.weekly_notes_dir.exists()
     assert manager.weekly_note_path.exists()
+
+
+def test_bootstrap_requires_existing_template_files(tmp_path: Path) -> None:
+    config = make_app_config(tmp_path)
+    config.daily_template.unlink()
+    manager = NoteManager(config)
+
+    with pytest.raises(FileNotFoundError, match="Daily template not found"):
+        manager.bootstrap()
 
 
 def test_update_daily_note_preserves_content_outside_managed_marker(tmp_path: Path) -> None:
@@ -21,7 +31,10 @@ def test_update_daily_note_preserves_content_outside_managed_marker(tmp_path: Pa
     manager.bootstrap()
     daily_path = manager.config.daily_notes_dir / "2026-03-22.md"
     daily_path.write_text(
-        "# 2026-03-22\n\nIntro\n\n##  TODAY'S TOP PAPER\n\nOld\n\n---\n## TASKS\n\nFooter\n",
+        (
+            "# 2026-03-22\n\n"
+            f"Intro\n\n{manager.config.daily_top_paper_heading}\n\nOld\n\n---\n## TASKS\n\nFooter\n"
+        ),
         encoding="utf-8",
     )
 
@@ -65,14 +78,14 @@ def test_update_daily_note_appends_block_when_heading_is_missing(tmp_path: Path)
 
     daily_text = daily_path.read_text(encoding="utf-8")
     assert daily_text.endswith("[[this-weeks-arxiv-papers|See all of this week's arXiv papers]]\n")
-    assert "##  TODAY'S TOP PAPER" in daily_text
+    assert manager.config.daily_top_paper_heading in daily_text
 
 
 def test_update_daily_note_renders_obsidian_style_date_template(tmp_path: Path) -> None:
     manager = NoteManager(make_app_config(tmp_path))
     manager.bootstrap()
     manager.config.daily_template.write_text(
-        "# DAILY NOTE: {{date:dddd Do MMMM YYYY}}\n\n##  TODAY'S TOP PAPER\n",
+        "# DAILY NOTE: {{date:dddd Do MMMM YYYY}}\n\n" + manager.config.daily_top_paper_heading + "\n",
         encoding="utf-8",
     )
 
@@ -86,7 +99,7 @@ def test_update_daily_note_renders_multiple_date_placeholders(tmp_path: Path) ->
     manager = NoteManager(make_app_config(tmp_path))
     manager.bootstrap()
     manager.config.daily_template.write_text(
-        "# {{date}}\n\nDate title: {{date:dddd Do MMMM YYYY}}\n\n##  TODAY'S TOP PAPER\n",
+        "# {{date}}\n\nDate title: {{date:dddd Do MMMM YYYY}}\n\n" + manager.config.daily_top_paper_heading + "\n",
         encoding="utf-8",
     )
 
@@ -106,9 +119,9 @@ def test_update_weekly_note_appends_missing_sections(tmp_path: Path) -> None:
 
     weekly_text = manager.weekly_note_path.read_text(encoding="utf-8")
     assert "Notes before managed sections." in weekly_text
-    assert "## SYNTHESIS" in weekly_text
+    assert manager.config.weekly_synthesis_heading in weekly_text
     assert "Fresh synthesis." in weekly_text
-    assert "## DAILY ADDITIONS" in weekly_text
+    assert manager.config.weekly_additions_heading in weekly_text
     assert "### Tuesday 24th" in weekly_text
 
 
@@ -126,3 +139,36 @@ def test_rotate_weekly_note_archives_previous_note_on_rotation_day(tmp_path: Pat
     assert rotated is True
     assert archived.exists()
     assert "Old synthesis." in archived.read_text(encoding="utf-8")
+
+
+def test_update_notes_uses_configured_managed_headings(tmp_path: Path) -> None:
+    config = make_app_config(
+        tmp_path,
+        daily_top_paper_heading="## Highlighted Paper",
+        weekly_synthesis_heading="## Weekly Synthesis",
+        weekly_additions_heading="## Weekly Additions",
+    )
+    manager = NoteManager(config)
+    manager.config.daily_template.write_text(
+        "# {{date}}\n\n## Tasks\n\n- \n\n## Highlighted Paper\n",
+        encoding="utf-8",
+    )
+    manager.config.weekly_template.write_text(
+        "# ARXIV PAPERS FOR THE WEEK\n\n## Weekly Synthesis\n\n---\n## Weekly Additions\n",
+        encoding="utf-8",
+    )
+    manager.bootstrap()
+
+    paper = make_processed_paper(tmp_path, micro_summary="Custom heading summary.")
+    manager.update_daily_note(date(2026, 3, 23), paper)
+    manager.update_weekly_note(date(2026, 3, 23), [paper], "Custom synthesis.")
+
+    daily_text = (manager.config.daily_notes_dir / "2026-03-23.md").read_text(encoding="utf-8")
+    weekly_text = manager.weekly_note_path.read_text(encoding="utf-8")
+
+    assert "## Highlighted Paper" in daily_text
+    assert "**Summary:** Custom heading summary." in daily_text
+    assert "## Weekly Synthesis" in weekly_text
+    assert "Custom synthesis." in weekly_text
+    assert "## Weekly Additions" in weekly_text
+    assert "### Monday 23rd" in weekly_text

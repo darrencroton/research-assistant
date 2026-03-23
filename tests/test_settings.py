@@ -5,12 +5,20 @@ import pytest
 from re_ass.settings import load_config
 
 
+DEFAULT_HEADINGS = (
+    "[notes]\n"
+    'daily_top_paper_heading = "## TODAY\'S TOP PAPER"\n'
+    'weekly_synthesis_heading = "## SYNTHESIS"\n'
+    'weekly_additions_heading = "## DAILY ADDITIONS"\n'
+)
+
+
 def test_load_config_parses_explicit_llm_provider_settings(tmp_path: Path) -> None:
     config_path = tmp_path / "settings.toml"
     config_path.write_text(
         "[output]\nroot = 'output'\n\n"
+        f"{DEFAULT_HEADINGS}\n"
         "[arxiv]\n"
-        "default_categories = ['astro-ph.CO']\n"
         "page_size = 75\n"
         "min_selection_score = 82.5\n"
         "\n"
@@ -42,8 +50,7 @@ def test_load_config_parses_explicit_llm_provider_settings(tmp_path: Path) -> No
 def test_load_config_parses_llm_effort_for_cli_provider(tmp_path: Path) -> None:
     config_path = tmp_path / "settings.toml"
     config_path.write_text(
-        "[arxiv]\n"
-        "default_categories = ['astro-ph.CO']\n\n"
+        f"{DEFAULT_HEADINGS}\n"
         "[llm]\n"
         "mode = 'cli'\n"
         "provider = 'copilot'\n"
@@ -57,30 +64,36 @@ def test_load_config_parses_llm_effort_for_cli_provider(tmp_path: Path) -> None:
     assert config.llm.provider_config()["effort"] == "high"
 
 
-def test_load_config_uses_new_runtime_sections() -> None:
-    config = load_config(project_root=Path("/tmp/re-ass-test"))
+def test_load_config_uses_new_runtime_sections(tmp_path: Path) -> None:
+    settings_dir = tmp_path / "user_preferences"
+    settings_dir.mkdir(parents=True)
+    (settings_dir / "settings.toml").write_text(DEFAULT_HEADINGS, encoding="utf-8")
 
-    assert config.output_root == Path("/tmp/re-ass-test/output").resolve()
-    assert config.summaries_dir == Path("/tmp/re-ass-test/output/summaries").resolve()
-    assert config.daily_notes_dir == Path("/tmp/re-ass-test/output/daily-notes").resolve()
-    assert config.weekly_notes_dir == Path("/tmp/re-ass-test/output/weekly-notes").resolve()
-    assert config.pdfs_dir == Path("/tmp/re-ass-test/output/pdfs").resolve()
-    assert config.state_root == Path("/tmp/re-ass-test/state").resolve()
-    assert config.logs_root == Path("/tmp/re-ass-test/logs").resolve()
-    assert config.daily_template == Path("/tmp/re-ass-test/user_preferences/templates/daily-note-template.md").resolve()
-    assert config.weekly_template == Path("/tmp/re-ass-test/user_preferences/templates/weekly-note-template.md").resolve()
-    assert config.preferences_file == Path("/tmp/re-ass-test/user_preferences/preferences.md").resolve()
+    config = load_config(project_root=tmp_path)
+
+    assert config.output_root == (tmp_path / "output").resolve()
+    assert config.summaries_dir == (tmp_path / "output" / "summaries").resolve()
+    assert config.daily_notes_dir == (tmp_path / "output" / "daily-notes").resolve()
+    assert config.weekly_notes_dir == (tmp_path / "output" / "weekly-notes").resolve()
+    assert config.pdfs_dir == (tmp_path / "output" / "pdfs").resolve()
+    assert config.state_root == (tmp_path / "state").resolve()
+    assert config.logs_root == (tmp_path / "logs").resolve()
+    assert config.daily_template == (tmp_path / "user_preferences" / "templates" / "daily-note-template.md").resolve()
+    assert config.weekly_template == (tmp_path / "user_preferences" / "templates" / "weekly-note-template.md").resolve()
+    assert config.preferences_file == (tmp_path / "user_preferences" / "preferences.md").resolve()
     assert config.arxiv_page_size == 100
     assert config.min_selection_score == 75.0
+    assert config.daily_top_paper_heading == "## TODAY'S TOP PAPER"
+    assert config.weekly_synthesis_heading == "## SYNTHESIS"
+    assert config.weekly_additions_heading == "## DAILY ADDITIONS"
     assert config.llm.effort is None
-    assert config.llm.prompt_debug_file == Path("/tmp/re-ass-test/tmp/paper_summariser/prompt.txt").resolve()
+    assert config.llm.prompt_debug_file == (tmp_path / "tmp" / "paper_summariser" / "prompt.txt").resolve()
 
 
 def test_load_config_treats_blank_llm_effort_as_unset(tmp_path: Path) -> None:
     config_path = tmp_path / "settings.toml"
     config_path.write_text(
-        "[arxiv]\n"
-        "default_categories = ['astro-ph.CO']\n\n"
+        f"{DEFAULT_HEADINGS}\n"
         "[llm]\n"
         "mode = 'cli'\n"
         "provider = 'claude'\n"
@@ -97,8 +110,8 @@ def test_load_config_treats_blank_llm_effort_as_unset(tmp_path: Path) -> None:
 def test_load_config_supports_legacy_arxiv_max_results_key(tmp_path: Path) -> None:
     config_path = tmp_path / "settings.toml"
     config_path.write_text(
+        f"{DEFAULT_HEADINGS}\n"
         "[arxiv]\n"
-        "default_categories = ['astro-ph.CO']\n"
         "max_results = 80\n",
         encoding="utf-8",
     )
@@ -108,13 +121,15 @@ def test_load_config_supports_legacy_arxiv_max_results_key(tmp_path: Path) -> No
     assert config.arxiv_page_size == 80
 
 
-def test_load_config_supports_markdown_links_and_rotation_day(tmp_path: Path) -> None:
+def test_load_config_supports_markdown_links_rotation_day_and_managed_headings(tmp_path: Path) -> None:
     config_path = tmp_path / "settings.toml"
     config_path.write_text(
         "[notes]\n"
         "link_style = 'markdown'\n"
-        "rotation_day = 'sunday'\n\n"
-        "[arxiv]\ndefault_categories = ['astro-ph.CO']\n",
+        "rotation_day = 'sunday'\n"
+        "daily_top_paper_heading = '## Featured Paper'\n"
+        "weekly_synthesis_heading = '## Weekly Summary'\n"
+        "weekly_additions_heading = '## Added This Week'\n",
         encoding="utf-8",
     )
 
@@ -122,13 +137,41 @@ def test_load_config_supports_markdown_links_and_rotation_day(tmp_path: Path) ->
 
     assert config.link_style == "markdown"
     assert config.rotation_day == "sunday"
+    assert config.daily_top_paper_heading == "## Featured Paper"
+    assert config.weekly_synthesis_heading == "## Weekly Summary"
+    assert config.weekly_additions_heading == "## Added This Week"
+
+
+def test_load_config_requires_managed_heading_settings(tmp_path: Path) -> None:
+    config_path = tmp_path / "settings.toml"
+    config_path.write_text("[notes]\nweekly_synthesis_heading = '## SYNTHESIS'\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"\[notes\]\.daily_top_paper_heading"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_blank_managed_heading(tmp_path: Path) -> None:
+    config_path = tmp_path / "settings.toml"
+    config_path.write_text(
+        "[notes]\n"
+        'daily_top_paper_heading = "## TODAY\'S TOP PAPER"\n'
+        'weekly_synthesis_heading = ""\n'
+        'weekly_additions_heading = "## DAILY ADDITIONS"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"\[notes\]\.weekly_synthesis_heading"):
+        load_config(config_path)
 
 
 def test_load_config_rejects_invalid_link_style(tmp_path: Path) -> None:
     config_path = tmp_path / "settings.toml"
     config_path.write_text(
-        "[notes]\nlink_style = 'html'\n\n"
-        "[arxiv]\ndefault_categories = ['astro-ph.CO']\n",
+        "[notes]\n"
+        "link_style = 'html'\n"
+        'daily_top_paper_heading = "## TODAY\'S TOP PAPER"\n'
+        'weekly_synthesis_heading = "## SYNTHESIS"\n'
+        'weekly_additions_heading = "## DAILY ADDITIONS"\n',
         encoding="utf-8",
     )
 
@@ -139,8 +182,11 @@ def test_load_config_rejects_invalid_link_style(tmp_path: Path) -> None:
 def test_load_config_rejects_invalid_rotation_day(tmp_path: Path) -> None:
     config_path = tmp_path / "settings.toml"
     config_path.write_text(
-        "[notes]\nrotation_day = 'funday'\n\n"
-        "[arxiv]\ndefault_categories = ['astro-ph.CO']\n",
+        "[notes]\n"
+        "rotation_day = 'funday'\n"
+        'daily_top_paper_heading = "## TODAY\'S TOP PAPER"\n'
+        'weekly_synthesis_heading = "## SYNTHESIS"\n'
+        'weekly_additions_heading = "## DAILY ADDITIONS"\n',
         encoding="utf-8",
     )
 
@@ -151,8 +197,7 @@ def test_load_config_rejects_invalid_rotation_day(tmp_path: Path) -> None:
 def test_load_config_rejects_invalid_llm_effort(tmp_path: Path) -> None:
     config_path = tmp_path / "settings.toml"
     config_path.write_text(
-        "[arxiv]\n"
-        "default_categories = ['astro-ph.CO']\n\n"
+        f"{DEFAULT_HEADINGS}\n"
         "[llm]\n"
         "effort = 'xhigh'\n",
         encoding="utf-8",
@@ -160,3 +205,8 @@ def test_load_config_rejects_invalid_llm_effort(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="llm.effort"):
         load_config(config_path)
+
+
+def test_load_config_requires_existing_settings_file(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="Settings file not found"):
+        load_config(project_root=tmp_path)

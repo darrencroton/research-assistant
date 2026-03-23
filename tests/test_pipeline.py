@@ -269,7 +269,7 @@ def test_pipeline_backfill_renders_daily_template_for_target_date(tmp_path: Path
     config = make_app_config(tmp_path)
     config.daily_template.parent.mkdir(parents=True, exist_ok=True)
     config.daily_template.write_text(
-        "# DAILY NOTE: {{date:dddd Do MMMM YYYY}}\n\n##  TODAY'S TOP PAPER\n",
+        "# DAILY NOTE: {{date:dddd Do MMMM YYYY}}\n\n" + config.daily_top_paper_heading + "\n",
         encoding="utf-8",
     )
     paper = make_paper(arxiv_id="2603.30036", title="Backfill Template Paper")

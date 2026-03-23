@@ -89,12 +89,14 @@ class AppConfig:
     weekly_note_file: str
     rotation_day: str
     archive_name_pattern: str
+    daily_top_paper_heading: str
+    weekly_synthesis_heading: str
+    weekly_additions_heading: str
 
     # arxiv
     max_papers: int
     arxiv_page_size: int
     min_selection_score: float
-    default_categories: tuple[str, ...]
 
     # llm
     llm: LlmConfig
@@ -120,17 +122,29 @@ def _config_root(candidate: Path) -> Path:
     return parent
 
 
+def _required_string(data: dict[str, object], key: str, section_name: str) -> str:
+    raw_value = data.get(key)
+    if raw_value is None:
+        raise ValueError(f"Missing required setting [{section_name}].{key} in settings.toml.")
+    value = str(raw_value)
+    if not value.strip():
+        raise ValueError(f"Setting [{section_name}].{key} must not be blank.")
+    return value
+
+
 def load_config(config_path: Path | None = None, project_root: Path | None = None) -> AppConfig:
     """Load and validate application configuration from settings.toml."""
     root = (project_root or _default_project_root()).resolve()
     candidate = Path(config_path).expanduser().resolve() if config_path else default_config_path(root)
-    data: dict[str, object] = {}
+    if not candidate.exists():
+        raise FileNotFoundError(
+            f"Settings file not found: {candidate}. Run ./scripts/setup.sh to create user_preferences/settings.toml."
+        )
 
-    if candidate.exists():
-        with candidate.open("rb") as handle:
-            data = tomllib.load(handle)
-        if project_root is None:
-            root = _config_root(candidate)
+    with candidate.open("rb") as handle:
+        data: dict[str, object] = tomllib.load(handle)
+    if project_root is None:
+        root = _config_root(candidate)
 
     output_data = data.get("output", {})
     state_data = data.get("state", {})
@@ -187,11 +201,11 @@ def load_config(config_path: Path | None = None, project_root: Path | None = Non
     if rotation_day not in _VALID_ROTATION_DAYS:
         raise ValueError(f"notes.rotation_day must be one of {_VALID_ROTATION_DAYS}, got '{rotation_day}'.")
     archive_name_pattern = str(notes_data.get("archive_name_pattern", "{date}-weekly-arxiv.md"))
+    daily_top_paper_heading = _required_string(notes_data, "daily_top_paper_heading", "notes")
+    weekly_synthesis_heading = _required_string(notes_data, "weekly_synthesis_heading", "notes")
+    weekly_additions_heading = _required_string(notes_data, "weekly_additions_heading", "notes")
 
     # Arxiv
-    default_categories = tuple(str(cat) for cat in arxiv_data.get("default_categories", ["astro-ph.CO", "astro-ph.GA", "astro-ph.HE"]))
-    if not default_categories:
-        raise ValueError("arxiv.default_categories must contain at least one category.")
     min_selection_score = float(arxiv_data.get("min_selection_score", 75.0))
 
     # LLM
@@ -245,9 +259,11 @@ def load_config(config_path: Path | None = None, project_root: Path | None = Non
         weekly_note_file=weekly_note_file,
         rotation_day=rotation_day,
         archive_name_pattern=archive_name_pattern,
+        daily_top_paper_heading=daily_top_paper_heading,
+        weekly_synthesis_heading=weekly_synthesis_heading,
+        weekly_additions_heading=weekly_additions_heading,
         max_papers=int(arxiv_data.get("max_papers", 3)),
         arxiv_page_size=int(arxiv_data.get("page_size", arxiv_data.get("max_results", 100))),
         min_selection_score=min_selection_score,
-        default_categories=default_categories,
         llm=llm,
     )

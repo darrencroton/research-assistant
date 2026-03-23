@@ -20,25 +20,24 @@ def test_load_preferences_parses_categories_and_priorities(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    preferences = load_preferences(preferences_file, ("cs.LG",))
+    preferences = load_preferences(preferences_file)
 
     assert preferences.categories == ("cs.AI", "cs.CL")
     assert preferences.priorities == ("Agents", "RAG")
 
 
-def test_load_preferences_uses_default_categories_when_missing(tmp_path: Path) -> None:
+def test_load_preferences_requires_categories(tmp_path: Path) -> None:
     preferences_file = tmp_path / "preferences.md"
     preferences_file.write_text(
         "# Arxiv Priorities\n"
-        "1. Agents\n"
-        "2. Tool Use\n",
+        "\n"
+        "## Priorities\n"
+        "1. Agents\n",
         encoding="utf-8",
     )
 
-    preferences = load_preferences(preferences_file, ("cs.AI", "cs.CL"))
-
-    assert preferences.categories == ("cs.AI", "cs.CL")
-    assert preferences.priorities == ("Agents", "Tool Use")
+    with pytest.raises(ValueError, match="No arXiv categories found"):
+        load_preferences(preferences_file)
 
 
 def test_load_preferences_ignores_non_category_bullets(tmp_path: Path) -> None:
@@ -54,7 +53,7 @@ def test_load_preferences_ignores_non_category_bullets(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    preferences = load_preferences(preferences_file, ("cs.LG",))
+    preferences = load_preferences(preferences_file)
 
     assert preferences.categories == ("cs.AI",)
     assert preferences.priorities == ("Agents",)
@@ -75,7 +74,7 @@ def test_load_preferences_parses_science_and_method_sections(tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    preferences = load_preferences(preferences_file, ("astro-ph.GA",))
+    preferences = load_preferences(preferences_file)
 
     assert preferences.categories == ("astro-ph.CO",)
     assert preferences.priorities == (
@@ -93,4 +92,11 @@ def test_load_preferences_requires_priorities(tmp_path: Path) -> None:
     preferences_file.write_text("# Empty\n\n## Categories\n- cs.AI\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="No priorities found"):
-        load_preferences(preferences_file, ("cs.AI",))
+        load_preferences(preferences_file)
+
+
+def test_load_preferences_requires_existing_file(tmp_path: Path) -> None:
+    preferences_file = tmp_path / "missing.md"
+
+    with pytest.raises(FileNotFoundError, match="Preferences file not found"):
+        load_preferences(preferences_file)

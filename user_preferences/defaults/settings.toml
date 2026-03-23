@@ -27,12 +27,14 @@ link_style = "wikilink"
 weekly_note_file = "this-weeks-arxiv-papers.md"
 rotation_day = "monday"
 archive_name_pattern = "{date}-weekly-arxiv.md"
+daily_top_paper_heading = "## TODAY'S TOP PAPER"
+weekly_synthesis_heading = "## SYNTHESIS"
+weekly_additions_heading = "## DAILY ADDITIONS"
 
 [arxiv]
 max_papers = 3
 page_size = 100
 min_selection_score = 80
-default_categories = ["astro-ph.CO", "astro-ph.GA", "astro-ph.HE"]
 
 [llm]
 mode = "cli"

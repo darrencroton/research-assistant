@@ -180,7 +180,7 @@ def run(config: AppConfig, run_date: date | None = None, *, backfill: bool = Fal
         else:
             note_manager.rotate_weekly_note_if_needed(target_date)
 
-        preferences = load_preferences(config.preferences_file, config.default_categories)
+        preferences = load_preferences(config.preferences_file)
         generation_service = GenerationService(config=config.llm)
         interval_start, interval_end = _determine_interval(
             target_date,
