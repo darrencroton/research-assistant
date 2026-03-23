@@ -109,7 +109,7 @@ You can:
 - point `[output]` at folders inside your notes directory or vault
 - symlink `output/` subdirectories into your notes directory or vault
 
-If you want custom note templates, configure these before your first run (see below).
+If you want custom daily/weekly note templates, configure these before your first run (see below).
 
 ### 5. Run once manually
 
