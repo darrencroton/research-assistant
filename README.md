@@ -1,6 +1,10 @@
 # ArXiv Research Assistant (`re-ass`)
 
-`re-ass` is a local arXiv triage tool for researchers. It fetches recent papers from the arXiv categories you care about, ranks them against your research priorities, and writes Markdown outputs you can keep as plain files or read inside a notes system such as Obsidian.
+`re-ass` is a local arXiv discovery tool for researchers. It fetches recent papers from the arXiv categories you care about, ranks them against your research priorities, and writes high quality Markdown summaries for the top ranked, direct to your Obsidian daily/weekly notes (or wherever you keep your research).
+
+It uses the same core summarisation engine as [Science Paper Summariser](https://github.com/darrencroton/science-paper-summariser) to produce consistent paper notes with a glossary, tags, and full citations.
+
+The default project knowledge is tuned for `astro-ph`, but the configuration can be adapted to other research fields.
 
 It writes:
 
@@ -60,10 +64,12 @@ Example:
 ```toml
 [llm]
 mode = "cli"
-provider = "codex"
-model = ""
-effort = ""
+provider = "copilot"
+model = "claude-sonnet-4.6"
+effort = "high"
 ```
+
+If you do not already have a Claude, Codex, or Gemini subscription, researchers and educators with an `.edu` email address may be eligible for [GitHub Education](https://github.com/education). Depending on the current offer, that can provide access to higher-capability Copilot models through the GitHub CLI.
 
 For scheduled automation, your chosen provider must already be authenticated for non-interactive use.
 
@@ -185,6 +191,11 @@ For full examples and common mistakes, see [Custom daily and weekly templates](u
 The repo includes a macOS `launchd` template and renderer in `scripts/launchd/`, but automation is optional and is not installed automatically.
 
 Only install automation after a manual run succeeds. For setup, schedule customisation, and troubleshooting, see [Automation with `launchd`](scripts/launchd/README.md).
+
+## Customisation
+
+- For a different research field, update `user_preferences/preferences.md` so `## Categories` fetches the right arXiv feeds and your priorities describe what counts as a strong match. If you also want the generated science-area tags to use a different vocabulary, edit `src/re_ass/paper_summariser/project_knowledge/astronomy-keywords.txt`.
+- To change the structure of each paper summary, edit `src/re_ass/paper_summariser/project_knowledge/paper-summary-template.md`. You may also need to change the LLM prompt rules around tags, glossary, citations, or section-writing behaviour; see `src/re_ass/paper_summariser/service.py`.
 
 ## Troubleshooting
 
