@@ -9,12 +9,12 @@ from pathlib import Path
 
 @dataclass(frozen=True, slots=True)
 class PreferenceConfig:
-    """Parsed user preferences: ranked priorities and arXiv categories."""
+    """Parsed user preferences: categories plus flat or grouped priorities."""
 
     priorities: tuple[str, ...]
     categories: tuple[str, ...]
-    raw_text: str
-    top_papers: int = 3
+    science_priorities: tuple[str, ...] = ()
+    method_priorities: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

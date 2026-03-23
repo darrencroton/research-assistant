@@ -2,32 +2,14 @@ import json
 
 import pytest
 
-from re_ass.paper_identity import derive_identity
 from re_ass.models import PreferenceConfig
-from re_ass.ranking import (
-    FeatureReranker,
-    HybridRetriever,
-    LexicalRetriever,
-    PaperRanker,
-    RankingError,
-    RerankedPaper,
-    RetrievedPaper,
-)
-from tests.fixtures.ranking_cases import (
-    astroph_preferences,
-    hybrid_recall_papers,
-    lexical_false_positive_papers,
-    rerank_pool_papers,
-)
+from re_ass.ranking import PaperRanker, RankingError
 from tests.support import make_app_config, make_paper
 
 
 class RecordingProvider:
     def __init__(self, response: str | list[str]) -> None:
-        if isinstance(response, str):
-            self.responses = [response]
-        else:
-            self.responses = list(response)
+        self.responses = [response] if isinstance(response, str) else list(response)
         self.calls = []
 
     def process_document(self, content, is_pdf, system_prompt, user_prompt, max_tokens=12288):
@@ -45,270 +27,25 @@ class RecordingProvider:
         return self.responses.pop(0)
 
 
-class StaticRetriever:
-    def __init__(self, retrieved: list[RetrievedPaper]) -> None:
-        self.retrieved = retrieved
-
-    def retrieve(self, _preferences, _candidates, *, limit: int) -> list[RetrievedPaper]:
-        return self.retrieved[:limit]
-
-
-class StaticReranker:
-    def __init__(self, reranked: list[RerankedPaper]) -> None:
-        self.reranked = reranked
-
-    def rerank(self, _preferences, _retrieved) -> list[RerankedPaper]:
-        return list(self.reranked)
-
-
-class FailIfCalledRetriever:
-    def retrieve(self, _preferences, _candidates, *, limit: int) -> list[RetrievedPaper]:
-        raise AssertionError(f"retriever should not run for small pools (limit={limit})")
-
-
-class FailIfCalledReranker:
-    def rerank(self, _preferences, _retrieved) -> list[RerankedPaper]:
-        raise AssertionError("reranker should not run for small pools")
-
-
-def _retrieved(
-    paper,
-    *,
-    lexical_score: float,
-    semantic_score: float,
-    fused_score: float,
-    matched_priorities: tuple[str, ...],
-    retrieval_channels: tuple[str, ...],
-) -> RetrievedPaper:
-    identity = derive_identity(paper)
-    return RetrievedPaper(
-        paper=paper,
-        paper_key=identity.paper_key,
-        source_id=identity.source_id,
-        lexical_score=lexical_score,
-        semantic_score=semantic_score,
-        fused_score=fused_score,
-        best_priority_index=0 if matched_priorities else 99,
-        matched_priority_count=len(matched_priorities),
-        matched_priorities=matched_priorities,
-        retrieval_channels=retrieval_channels,
-        retrieval_notes=("test fixture",),
-    )
-
-
-def _reranked(
-    retrieved: RetrievedPaper,
-    *,
-    rerank_score: float,
-    rationale: str,
-) -> RerankedPaper:
-    return RerankedPaper(
-        paper=retrieved.paper,
-        paper_key=retrieved.paper_key,
-        source_id=retrieved.source_id,
-        lexical_score=retrieved.lexical_score,
-        semantic_score=retrieved.semantic_score,
-        fused_score=retrieved.fused_score,
-        rerank_score=rerank_score,
-        rationale=rationale,
-        best_priority_index=retrieved.best_priority_index,
-        matched_priority_count=retrieved.matched_priority_count,
-        matched_priorities=retrieved.matched_priorities,
-        retrieval_channels=retrieved.retrieval_channels,
-        retrieval_notes=retrieved.retrieval_notes,
-    )
-
-
-def _single_priority_preferences(priority: str) -> PreferenceConfig:
+def _preferences(*priorities: str) -> PreferenceConfig:
     return PreferenceConfig(
-        priorities=(priority,),
+        priorities=priorities,
         categories=("astro-ph.GA",),
-        raw_text=f"# Priorities\n1. {priority}\n",
     )
 
 
-def test_lexical_retriever_requires_anchor_terms_for_generic_model_overlap() -> None:
-    preferences = _single_priority_preferences("Semi-analytic galaxy formation models")
-    papers = lexical_false_positive_papers()
-
-    retrieved = LexicalRetriever().retrieve(preferences, papers, limit=2)
-
-    assert [item.paper.title for item in retrieved] == ["Semi-analytic black-hole growth in galaxy assembly"]
-
-
-def test_hybrid_retriever_recovers_alias_based_match_missing_from_lexical_stage() -> None:
-    preferences = _single_priority_preferences("Semi-analytic galaxy formation models")
-    papers = hybrid_recall_papers()
-
-    lexical_titles = [
-        item.paper.title
-        for item in LexicalRetriever().retrieve(preferences, papers, limit=2)
-    ]
-    hybrid_titles = [item.paper.title for item in HybridRetriever().retrieve(preferences, papers, limit=2)]
-
-    assert "Galaxy assembly in SAMs with quasar feedback" not in lexical_titles
-    assert hybrid_titles[0] == "Galaxy assembly in SAMs with quasar feedback"
-
-
-def test_feature_reranker_can_reorder_the_fused_retrieval_pool() -> None:
-    preferences = astroph_preferences()
-    generic_paper, strong_match = rerank_pool_papers()
-    generic_retrieved = _retrieved(
-        generic_paper,
-        lexical_score=0.88,
-        semantic_score=0.18,
-        fused_score=0.91,
-        matched_priorities=("Semi-analytic galaxy formation models",),
-        retrieval_channels=("lexical",),
+def test_ranker_uses_ordered_priorities_and_compact_candidate_payload(tmp_path) -> None:
+    paper = make_paper(
+        arxiv_id="2603.40011",
+        title="Semantic Agents",
+        summary="Agentic workflows for tool use.",
+        authors=("Author One", "Author Two"),
     )
-    strong_retrieved = _retrieved(
-        strong_match,
-        lexical_score=0.62,
-        semantic_score=0.81,
-        fused_score=0.84,
-        matched_priorities=("Black holes and AGN", "Semi-analytic galaxy formation models"),
-        retrieval_channels=("lexical", "semantic"),
-    )
-
-    reranked = FeatureReranker().rerank(preferences, [generic_retrieved, strong_retrieved])
-
-    assert [item.paper.title for item in reranked] == [
-        "AGN feedback in semi-analytic SAM galaxy assembly",
-        "Galaxy formation benchmark models",
-    ]
-
-
-def test_paper_ranker_uses_full_preferences_document_in_final_selection_prompt(tmp_path) -> None:
-    paper = make_paper(arxiv_id="2603.40011", title="Semantic Agents")
     provider = RecordingProvider(
         json.dumps(
             {
-                "selected_papers": [
-                    {"candidate_id": "arxiv:2603.40011", "score": 96, "rationale": "Best matches the document."}
-                ]
-            }
-        )
-    )
-    config = make_app_config(tmp_path).llm
-    retrieved = _retrieved(
-        paper,
-        lexical_score=0.7,
-        semantic_score=0.9,
-        fused_score=0.95,
-        matched_priorities=("Agents",),
-        retrieval_channels=("lexical", "semantic"),
-    )
-    reranked = _reranked(retrieved, rerank_score=0.96, rationale="Best local match.")
-    ranker = PaperRanker(
-        provider=provider,
-        config=config,
-        retrieval_pool_size=12,
-        final_pool_size=6,
-        min_selection_score=80.0,
-        retriever=StaticRetriever([retrieved]),
-        reranker=StaticReranker([reranked]),
-    )
-    preferences = type(
-        "Preferences",
-        (),
-        {
-            "priorities": ("Agents",),
-            "categories": ("cs.AI",),
-            "raw_text": "# Priorities\n1. Agents\n2. Tool use\n",
-        },
-    )()
-
-    selection = ranker.select_top_papers(preferences, [paper], max_papers=1)
-
-    assert [item.title for item in selection.selected_papers] == ["Semantic Agents"]
-    assert "# Priorities" in provider.calls[0]["user_prompt"]
-    assert "Tool use" in provider.calls[0]["user_prompt"]
-
-
-def test_paper_ranker_respects_final_selector_output_and_threshold(tmp_path) -> None:
-    papers = [
-        make_paper(arxiv_id="2603.40021", title="Strong Lexical Match", summary="Agents agents agents"),
-        make_paper(arxiv_id="2603.40022", title="Semantic Best Match", summary="General reasoning"),
-        make_paper(arxiv_id="2603.40023", title="Third Choice", summary="Useful tooling"),
-    ]
-    provider = RecordingProvider(
-        json.dumps(
-            {
-                "selected_papers": [
-                    {"candidate_id": "arxiv:2603.40022", "score": 99, "rationale": "Best overall fit."},
-                    {"candidate_id": "arxiv:2603.40023", "score": 81, "rationale": "Second-best fit."},
-                    {"candidate_id": "arxiv:2603.40021", "score": 61, "rationale": "Mostly lexical overlap."},
-                ]
-            }
-        )
-    )
-    retrieved = [
-        _retrieved(
-            papers[0],
-            lexical_score=0.95,
-            semantic_score=0.25,
-            fused_score=0.92,
-            matched_priorities=("Agents",),
-            retrieval_channels=("lexical",),
-        ),
-        _retrieved(
-            papers[1],
-            lexical_score=0.55,
-            semantic_score=0.92,
-            fused_score=0.90,
-            matched_priorities=("Agents",),
-            retrieval_channels=("semantic",),
-        ),
-        _retrieved(
-            papers[2],
-            lexical_score=0.65,
-            semantic_score=0.78,
-            fused_score=0.80,
-            matched_priorities=("Tool use",),
-            retrieval_channels=("lexical", "semantic"),
-        ),
-    ]
-    reranked = [
-        _reranked(retrieved[1], rerank_score=0.98, rationale="Best overall fit."),
-        _reranked(retrieved[2], rerank_score=0.87, rationale="Second-best fit."),
-        _reranked(retrieved[0], rerank_score=0.59, rationale="Mostly lexical overlap."),
-    ]
-    ranker = PaperRanker(
-        provider=provider,
-        config=make_app_config(tmp_path).llm,
-        retrieval_pool_size=12,
-        final_pool_size=6,
-        min_selection_score=80.0,
-        retriever=StaticRetriever(retrieved),
-        reranker=StaticReranker(reranked),
-    )
-    preferences = type(
-        "Preferences",
-        (),
-        {
-            "priorities": ("Agents", "Tool use"),
-            "categories": ("cs.AI",),
-            "raw_text": "# Priorities\n1. Agents with strong evaluation\n2. Tool use\n",
-        },
-    )()
-
-    selection = ranker.select_top_papers(preferences, papers, max_papers=2)
-
-    assert [paper.title for paper in selection.selected_papers] == ["Semantic Best Match", "Third Choice"]
-    assert len(selection.selected) == 2
-
-
-def test_paper_ranker_sends_small_candidate_pools_wholesale_without_retrieval_truncation(tmp_path) -> None:
-    papers = [
-        make_paper(arxiv_id="2603.40041", title="Little Red Dots in JWST"),
-        make_paper(arxiv_id="2603.40042", title="AGN feedback in SAMs"),
-    ]
-    provider = RecordingProvider(
-        json.dumps(
-            {
-                "selected_papers": [
-                    {"candidate_id": "arxiv:2603.40042", "score": 97, "rationale": "Best overall fit."},
-                    {"candidate_id": "arxiv:2603.40041", "score": 91, "rationale": "Strong secondary fit."},
+                "ranked_papers": [
+                    {"candidate_id": "arxiv:2603.40011", "score": 96, "rationale": "Best match to the highest priorities."}
                 ]
             }
         )
@@ -316,35 +53,45 @@ def test_paper_ranker_sends_small_candidate_pools_wholesale_without_retrieval_tr
     ranker = PaperRanker(
         provider=provider,
         config=make_app_config(tmp_path).llm,
-        retrieval_pool_size=1,
-        final_pool_size=1,
+        max_papers=3,
         min_selection_score=80.0,
-        passthrough_candidate_count=50,
-        retriever=FailIfCalledRetriever(),
-        reranker=FailIfCalledReranker(),
     )
-    preferences = astroph_preferences()
 
-    selection = ranker.select_top_papers(preferences, papers, max_papers=2)
+    selection = ranker.rank_papers(_preferences("Agents", "Tool use"), [paper])
 
-    assert [paper.title for paper in selection.selected_papers] == ["AGN feedback in SAMs", "Little Red Dots in JWST"]
-    assert "Little Red Dots in JWST" in provider.calls[0]["user_prompt"]
-    assert "AGN feedback in SAMs" in provider.calls[0]["user_prompt"]
+    assert [item.paper.title for item in selection.selected] == ["Semantic Agents"]
+    prompt = provider.calls[0]["user_prompt"]
+    assert "1. Agents" in prompt
+    assert "2. Tool use" in prompt
+    assert "Semantic Agents" in prompt
+    assert "Agentic workflows for tool use." in prompt
+    assert "Author One" not in prompt
+    assert "Matching multiple priorities is a bonus, not a requirement." in prompt
 
 
-def test_paper_ranker_uses_relaxed_score_floor_for_direct_small_pools(tmp_path) -> None:
+def test_ranker_requires_science_and_method_matches_when_sections_are_present(tmp_path) -> None:
     papers = [
-        make_paper(arxiv_id="2603.40051", title="AGN metallicity calibrations"),
-        make_paper(arxiv_id="2603.40052", title="PAH variations in AGN hosts"),
-        make_paper(arxiv_id="2603.40053", title="Black hole spin-up in proto-stellar clusters"),
+        make_paper(arxiv_id="2603.40015", title="Dual Match"),
+        make_paper(arxiv_id="2603.40016", title="Science Only"),
     ]
     provider = RecordingProvider(
         json.dumps(
             {
-                "selected_papers": [
-                    {"candidate_id": "arxiv:2603.40051", "score": 72, "rationale": "Strong AGN relevance."},
-                    {"candidate_id": "arxiv:2603.40052", "score": 55, "rationale": "Useful secondary AGN fit."},
-                    {"candidate_id": "arxiv:2603.40053", "score": 48, "rationale": "Marginal black-hole fit."},
+                "ranked_papers": [
+                    {
+                        "candidate_id": "arxiv:2603.40015",
+                        "score": 91,
+                        "science_match": True,
+                        "method_match": True,
+                        "rationale": "Matches the target science and method priorities directly.",
+                    },
+                    {
+                        "candidate_id": "arxiv:2603.40016",
+                        "score": 95,
+                        "science_match": True,
+                        "method_match": False,
+                        "rationale": "Strong science topic but lacks the requested method angle.",
+                    },
                 ]
             }
         )
@@ -352,112 +99,104 @@ def test_paper_ranker_uses_relaxed_score_floor_for_direct_small_pools(tmp_path) 
     ranker = PaperRanker(
         provider=provider,
         config=make_app_config(tmp_path).llm,
-        retrieval_pool_size=12,
-        final_pool_size=6,
+        max_papers=5,
         min_selection_score=80.0,
-        passthrough_candidate_count=50,
-        retriever=FailIfCalledRetriever(),
-        reranker=FailIfCalledReranker(),
+    )
+    preferences = PreferenceConfig(
+        priorities=("Little red dots", "Semi-analytic models"),
+        categories=("astro-ph.GA",),
+        science_priorities=("Little red dots",),
+        method_priorities=("Semi-analytic models",),
     )
 
-    selection = ranker.select_top_papers(astroph_preferences(), papers, max_papers=3)
+    selection = ranker.rank_papers(preferences, papers)
 
-    assert [paper.title for paper in selection.selected_papers] == [
-        "AGN metallicity calibrations",
-        "PAH variations in AGN hosts",
+    assert [paper.title for paper in selection.selected_papers] == ["Dual Match"]
+    prompt = provider.calls[0]["user_prompt"]
+    assert "<science_priorities>" in prompt
+    assert "<method_priorities>" in prompt
+    assert "A paper should only receive a strong score if both science_match and method_match are true." in prompt
+    assert '"science_match":true' in prompt
+
+
+def test_ranker_filters_by_threshold_and_cap(tmp_path) -> None:
+    papers = [
+        make_paper(arxiv_id="2603.40021", title="Strong Fit"),
+        make_paper(arxiv_id="2603.40022", title="Second Fit"),
+        make_paper(arxiv_id="2603.40023", title="Weak Fit"),
     ]
-
-
-def test_paper_ranker_rejects_unknown_candidate_in_final_selection_payload(tmp_path) -> None:
-    paper = make_paper(arxiv_id="2603.40031", title="Only Paper")
     provider = RecordingProvider(
-        [
-            json.dumps(
-                {
-                    "selected_papers": [
-                        {"candidate_id": "arxiv:2603.49999", "score": 99, "rationale": "Unknown candidate."}
-                    ]
-                }
-            ),
-            json.dumps(
-                {
-                    "selected_papers": [
-                        {"candidate_id": "arxiv:2603.49999", "score": 99, "rationale": "Still wrong."}
-                    ]
-                }
-            ),
-        ]
+        json.dumps(
+            {
+                "ranked_papers": [
+                    {"candidate_id": "arxiv:2603.40021", "score": 94, "rationale": "Strongest match."},
+                    {"candidate_id": "arxiv:2603.40022", "score": 81, "rationale": "Solid secondary match."},
+                    {"candidate_id": "arxiv:2603.40023", "score": 61, "rationale": "Only a borderline fit."},
+                ]
+            }
+        )
     )
-    retrieved = _retrieved(
-        paper,
-        lexical_score=0.7,
-        semantic_score=0.7,
-        fused_score=0.75,
-        matched_priorities=("Agents",),
-        retrieval_channels=("lexical", "semantic"),
-    )
-    reranked = _reranked(retrieved, rerank_score=0.88, rationale="Good fit.")
     ranker = PaperRanker(
         provider=provider,
         config=make_app_config(tmp_path).llm,
-        retrieval_pool_size=12,
-        final_pool_size=6,
+        max_papers=2,
         min_selection_score=80.0,
-        retriever=StaticRetriever([retrieved]),
-        reranker=StaticReranker([reranked]),
     )
-    preferences = type(
-        "Preferences",
-        (),
-        {"priorities": ("Agents",), "categories": ("cs.AI",), "raw_text": "1. Agents"},
-    )()
 
-    with pytest.raises(RankingError, match="remained invalid after repair attempt"):
-        ranker.select_top_papers(preferences, [paper], max_papers=1)
-    assert len(provider.calls) == 2
+    selection = ranker.rank_papers(_preferences("Agents"), papers)
+
+    assert [paper.title for paper in selection.selected_papers] == ["Strong Fit", "Second Fit"]
+    assert [item.paper.title for item in selection.ranked] == ["Strong Fit", "Second Fit", "Weak Fit"]
 
 
-def test_paper_ranker_repairs_invalid_candidate_id_in_final_selection_payload(tmp_path) -> None:
+def test_ranker_sorts_by_score_when_provider_returns_unsorted_payload(tmp_path) -> None:
     papers = [
-        make_paper(arxiv_id="2603.50041", title="Wrong Turn"),
-        make_paper(arxiv_id="2603.50045", title="Accelerated size evolution in the FirstLight simulations from z=14 to z=5"),
+        make_paper(arxiv_id="2603.40031", title="Lower Score"),
+        make_paper(arxiv_id="2603.40032", title="Higher Score"),
     ]
-    retrieved = [
-        _retrieved(
-            paper,
-            lexical_score=0.8,
-            semantic_score=0.8,
-            fused_score=0.85,
-            matched_priorities=("JWST",),
-            retrieval_channels=("lexical", "semantic"),
+    provider = RecordingProvider(
+        json.dumps(
+            {
+                "ranked_papers": [
+                    {"candidate_id": "arxiv:2603.40031", "score": 60, "rationale": "Lower relevance."},
+                    {"candidate_id": "arxiv:2603.40032", "score": 95, "rationale": "Highest relevance."},
+                ]
+            }
         )
-        for paper in papers
-    ]
-    reranked = [
-        _reranked(retrieved[0], rerank_score=0.82, rationale="Good fit."),
-        _reranked(retrieved[1], rerank_score=0.91, rationale="Best size-evolution fit."),
+    )
+    ranker = PaperRanker(
+        provider=provider,
+        config=make_app_config(tmp_path).llm,
+        max_papers=1,
+        min_selection_score=80.0,
+    )
+
+    selection = ranker.rank_papers(_preferences("Agents"), papers)
+
+    assert [item.paper.title for item in selection.ranked] == ["Higher Score", "Lower Score"]
+    assert [paper.title for paper in selection.selected_papers] == ["Higher Score"]
+
+
+def test_ranker_repairs_invalid_payload_once(tmp_path) -> None:
+    papers = [
+        make_paper(arxiv_id="2603.40041", title="Paper One"),
+        make_paper(arxiv_id="2603.40042", title="Paper Two"),
     ]
     provider = RecordingProvider(
         [
             json.dumps(
                 {
-                    "selected_papers": [
-                        {
-                            "candidate_id": "arxiv:2603.50044",
-                            "score": 92,
-                            "rationale": "High-redshift galaxy size evolution from z=14 to z=5 in FirstLight simulations.",
-                        }
+                    "ranked_papers": [
+                        {"candidate_id": "arxiv:2603.49999", "score": 97, "rationale": "Unknown id."},
+                        {"candidate_id": "arxiv:2603.40042", "score": 75, "rationale": "Known id."},
                     ]
                 }
             ),
             json.dumps(
                 {
-                    "selected_papers": [
-                        {
-                            "candidate_id": "arxiv:2603.50045",
-                            "score": 92,
-                            "rationale": "High-redshift galaxy size evolution from z=14 to z=5 in FirstLight simulations.",
-                        }
+                    "ranked_papers": [
+                        {"candidate_id": "arxiv:2603.40041", "score": 97, "rationale": "Best match."},
+                        {"candidate_id": "arxiv:2603.40042", "score": 75, "rationale": "Secondary match."},
                     ]
                 }
             ),
@@ -466,22 +205,32 @@ def test_paper_ranker_repairs_invalid_candidate_id_in_final_selection_payload(tm
     ranker = PaperRanker(
         provider=provider,
         config=make_app_config(tmp_path).llm,
-        retrieval_pool_size=12,
-        final_pool_size=6,
-        min_selection_score=80.0,
-        retriever=StaticRetriever(retrieved),
-        reranker=StaticReranker(reranked),
+        max_papers=2,
+        min_selection_score=70.0,
     )
-    preferences = type(
-        "Preferences",
-        (),
-        {"priorities": ("JWST",), "categories": ("astro-ph.GA",), "raw_text": "1. JWST and high-redshift galaxies"},
-    )()
 
-    selection = ranker.select_top_papers(preferences, papers, max_papers=1)
+    selection = ranker.rank_papers(_preferences("Agents"), papers)
 
-    assert [paper.title for paper in selection.selected_papers] == [
-        "Accelerated size evolution in the FirstLight simulations from z=14 to z=5"
-    ]
+    assert [paper.title for paper in selection.selected_papers] == ["Paper One", "Paper Two"]
     assert len(provider.calls) == 2
     assert "validation_error" in provider.calls[1]["user_prompt"]
+
+
+def test_ranker_requires_full_ranked_list_after_repair(tmp_path) -> None:
+    paper = make_paper(arxiv_id="2603.40051", title="Only Paper")
+    provider = RecordingProvider(
+        [
+            json.dumps({"ranked_papers": []}),
+            json.dumps({"ranked_papers": []}),
+        ]
+    )
+    ranker = PaperRanker(
+        provider=provider,
+        config=make_app_config(tmp_path).llm,
+        max_papers=1,
+        min_selection_score=80.0,
+    )
+
+    with pytest.raises(RankingError, match="remained invalid after repair attempt"):
+        ranker.rank_papers(_preferences("Agents"), [paper])
+    assert len(provider.calls) == 2

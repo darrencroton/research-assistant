@@ -86,7 +86,7 @@ def test_collect_candidates_fetches_all_in_range_results_across_categories() -> 
     )
 
     papers = fetcher.collect_candidates(
-        PreferenceConfig(priorities=("Agents",), categories=("cs.AI", "cs.CL"), raw_text="1. Agents"),
+        PreferenceConfig(priorities=("Agents",), categories=("cs.AI", "cs.CL")),
         start=now - timedelta(hours=3),
         end=now,
     )
@@ -134,7 +134,7 @@ def test_collect_candidates_skips_completed_paper_keys() -> None:
     )
 
     papers = fetcher.collect_candidates(
-        PreferenceConfig(priorities=("Agents",), categories=("cs.AI",), raw_text="1. Agents"),
+        PreferenceConfig(priorities=("Agents",), categories=("cs.AI",)),
         start=now - timedelta(days=3),
         end=now,
         excluded_paper_keys={excluded_key},

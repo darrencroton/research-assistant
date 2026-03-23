@@ -375,7 +375,7 @@ def extract_source_metadata(input_path: Path, paper_text: str) -> SourceMetadata
 def create_system_prompt(keywords: str) -> str:
     return (
         "<role>\n"
-        "You are an esteemed professor of astrophysics at Harvard University "
+        "You are an esteemed professor at Harvard University "
         "specializing in analyzing research papers. Your are an expert in \n"
         "identifying key scientific results and their significance.\n"
         "</role>\n\n"

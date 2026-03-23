@@ -46,7 +46,7 @@ For automation, your provider must already be authenticated for non-interactive 
 Edit these files after setup:
 
 - `user_preferences/settings.toml`: provider, output paths, note settings
-- `user_preferences/preferences.md`: arXiv categories, topics to prioritise, number of top papers
+- `user_preferences/preferences.md`: arXiv categories and ordered ranking priorities
 
 Decide where you want your notes to live:
 
@@ -123,7 +123,7 @@ Main config: `user_preferences/settings.toml`
 - `[templates]`: which daily and weekly templates to use
 - `[preferences]`: which preferences file to read
 - `[notes]`: link style, weekly filename, rotation day, archive naming
-- `[arxiv]`: limits, categories, and ranking pool sizes
+- `[arxiv]`: limits, categories, and ranking threshold
 - `[llm]`: provider and model settings
 
 `[llm]` also supports an optional `effort` setting for CLI providers:
@@ -132,14 +132,29 @@ Main config: `user_preferences/settings.toml`
 - `effort = "low"`, `"medium"`, or `"high"`: set reasoning effort for `claude`, `codex`, or `copilot`
 - `gemini` currently ignores `effort` and logs a warning
 
-In `user_preferences/preferences.md`, you can optionally set the number of papers to save:
+The ranker scores every fetched candidate against the priorities in `user_preferences/preferences.md`, whether they are written as one ordered list or split into science and methods, keeps papers at or above `[arxiv].min_selection_score`, and then caps the final selection at `[arxiv].max_papers`.
+
+Priority-writing guidance:
+
+- Keep each priority to one concrete line.
+- Use specific terms, aliases, and contexts you care about.
+- Add a short exclusion when a topic has obvious near-misses.
+- If you want conjunctive matching, split priorities into `## Priorities - Science` and `## Priorities - Methods`.
+- With that split, a paper is only treated as a strong fit if it matches at least one science priority and at least one method priority.
+- With a single flat `## Priorities` list, a strong direct match to one priority can be enough; multiple matches are a bonus.
+- With the science/method split, one direct match in each section can be enough; multiple matches are a bonus.
+
+Example:
 
 ```markdown
-## Output
-- Top papers: 5
-```
+## Priorities - Science
+1. Little red dots, LRDs, and compact dusty red JWST sources at high redshift
+2. Black holes and AGN in galaxies: SMBH growth, AGN triggering, AGN feedback, JWST AGN, merger-driven AGN; not GW-only MBH binary papers
 
-If omitted, the app saves 3 papers by default.
+## Priorities - Methods
+1. Semi-analytic galaxy formation models: semi-analytic models, SAMs, L-Galaxies, SHARK, SAGE, the Somerville model, and model predictions
+2. Large observational surveys: SDSS, DESI, HSC, LSST, Euclid, Roman, JWST legacy fields, wide-field multiwavelength surveys, survey catalogues, and statistically powerful survey samples
+```
 
 ## Obsidian
 

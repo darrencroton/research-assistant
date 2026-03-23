@@ -11,42 +11,20 @@ from tests.support import make_app_config, make_paper
 
 def _build_selection(candidates, *, selected=None):
     selected = list(selected or candidates)
-    retrieval_pool = []
-    reranked = []
+    ranked = []
     final_selected = []
 
     for offset, paper in enumerate(candidates):
         identity = derive_identity(paper)
-        retrieval_pool.append(
+        ranked.append(
             SimpleNamespace(
                 paper=paper,
                 paper_key=identity.paper_key,
                 source_id=identity.source_id,
-                lexical_score=max(0.0, 1.0 - offset * 0.1),
-                semantic_score=max(0.0, 0.9 - offset * 0.1),
-                fused_score=max(0.0, 0.95 - offset * 0.1),
-                best_priority_index=offset,
-                matched_priority_count=max(1, len(candidates) - offset),
-                matched_priorities=("Agents",),
-                retrieval_channels=("lexical", "semantic"),
-                retrieval_notes=("fixture",),
-            )
-        )
-        reranked.append(
-            SimpleNamespace(
-                paper=paper,
-                paper_key=identity.paper_key,
-                source_id=identity.source_id,
-                lexical_score=max(0.0, 1.0 - offset * 0.1),
-                semantic_score=max(0.0, 0.9 - offset * 0.1),
-                fused_score=max(0.0, 0.95 - offset * 0.1),
-                rerank_score=float(100 - offset),
+                score=float(100 - offset),
                 rationale=f"Reason for {paper.title}",
-                best_priority_index=offset,
-                matched_priority_count=max(1, len(candidates) - offset),
-                matched_priorities=("Agents",),
-                retrieval_channels=("lexical", "semantic"),
-                retrieval_notes=("fixture",),
+                science_match=None,
+                method_match=None,
             )
         )
 
@@ -57,21 +35,18 @@ def _build_selection(candidates, *, selected=None):
                 paper=paper,
                 paper_key=identity.paper_key,
                 source_id=identity.source_id,
-                selection_score=float(98 - offset),
-                rerank_score=float(100 - offset),
+                score=float(98 - offset),
                 rationale=f"Selected {paper.title}",
+                science_match=None,
+                method_match=None,
             )
         )
 
     return SimpleNamespace(
         selected_papers=selected,
         candidate_count=len(candidates),
-        retrieval_pool=retrieval_pool,
-        reranked=reranked,
+        ranked=ranked,
         selected=final_selected,
-        final_pool=reranked,
-        used_passthrough=False,
-        shortlist=retrieval_pool,
     )
 
 
@@ -120,28 +95,24 @@ class FakeGenerationService:
 class FakeRanker:
     last_max_papers = None
 
-    def __init__(self, *, selection=None) -> None:
+    def __init__(self, *, selection=None, max_papers=None, **_kwargs) -> None:
         self.selection = selection
-
-    def select_top_papers(self, _preferences, candidates, *, max_papers):
         FakeRanker.last_max_papers = max_papers
-        selection = self.selection or _build_selection(candidates, selected=candidates[:max_papers])
+
+    def rank_papers(self, _preferences, candidates):
+        selection = self.selection or _build_selection(candidates, selected=candidates[: FakeRanker.last_max_papers])
         return SimpleNamespace(
-            selected_papers=list(selection.selected_papers)[:max_papers],
+            selected_papers=list(selection.selected_papers)[: FakeRanker.last_max_papers],
             candidate_count=selection.candidate_count,
-            retrieval_pool=selection.retrieval_pool,
-            reranked=selection.reranked,
-            selected=selection.selected[:max_papers],
-            final_pool=selection.final_pool,
-            used_passthrough=getattr(selection, "used_passthrough", False),
-            shortlist=selection.retrieval_pool,
+            ranked=selection.ranked,
+            selected=selection.selected[: FakeRanker.last_max_papers],
         )
 
 
 def test_pipeline_returns_zero_and_writes_run_summary_when_no_new_papers(tmp_path: Path, monkeypatch) -> None:
     config = make_app_config(tmp_path)
     monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher([]))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker())
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **kwargs: FakeRanker(**kwargs))
     monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
     monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
 
@@ -160,7 +131,10 @@ def test_pipeline_continues_after_non_fatal_per_paper_failure(tmp_path: Path, mo
         make_paper(arxiv_id="2603.30002", title="Broken Paper"),
     ]
     monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher(papers))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker(selection=_build_selection(papers, selected=papers)))
+    monkeypatch.setattr(
+        "re_ass.pipeline.PaperRanker",
+        lambda **kwargs: FakeRanker(selection=_build_selection(papers, selected=papers), **kwargs),
+    )
     monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
     monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService(failing_titles={"Broken Paper"}))
 
@@ -202,7 +176,7 @@ def test_pipeline_writes_verbatim_summariser_note_output(tmp_path: Path, monkeyp
         '[^1]: "Quoted support" (Abstract, p.1)\n'
     )
     monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher([paper]))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker())
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **kwargs: FakeRanker(**kwargs))
     monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(
         "re_ass.pipeline.GenerationService",
@@ -224,7 +198,7 @@ def test_pipeline_leaves_papers_retryable_when_note_update_fails(tmp_path: Path,
     config = make_app_config(tmp_path)
     paper = make_paper(arxiv_id="2603.30031", title="Retryable Paper")
     monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher([paper]))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker())
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **kwargs: FakeRanker(**kwargs))
     monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
     monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
     monkeypatch.setattr("re_ass.pipeline.NoteManager", FailingNoteManager)
@@ -243,7 +217,7 @@ def test_pipeline_backfill_uses_stable_local_day_interval(tmp_path: Path, monkey
     fixed_tz = timezone(timedelta(hours=11))
     monkeypatch.setattr("re_ass.pipeline._local_timezone", lambda: fixed_tz)
     monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher([paper]))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker())
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **kwargs: FakeRanker(**kwargs))
     monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
     monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
 
@@ -277,7 +251,7 @@ def test_pipeline_backfill_leaves_current_weekly_summary_unchanged(tmp_path: Pat
     )
     paper = make_paper(arxiv_id="2603.30041", title="Backfill Paper")
     monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher([paper]))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker())
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **kwargs: FakeRanker(**kwargs))
     monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
     monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
 
@@ -300,7 +274,7 @@ def test_pipeline_backfill_renders_daily_template_for_target_date(tmp_path: Path
     )
     paper = make_paper(arxiv_id="2603.30036", title="Backfill Template Paper")
     monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher([paper]))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker())
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **kwargs: FakeRanker(**kwargs))
     monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
     monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
 
@@ -319,7 +293,7 @@ def test_pipeline_records_interval_and_ranking_diagnostics(tmp_path: Path, monke
     ]
     selection = _build_selection(papers, selected=papers[:1])
     monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher(papers))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker(selection=selection))
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **kwargs: FakeRanker(selection=selection, **kwargs))
     monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
     monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
 
@@ -330,39 +304,21 @@ def test_pipeline_records_interval_and_ranking_diagnostics(tmp_path: Path, monke
     assert '"interval_start"' in summary_text
     assert '"interval_end"' in summary_text
     assert '"candidate_count": 2' in summary_text
-    assert '"requested_paper_count": 3' in summary_text
-    assert '"retrieval_pool_size": 2' in summary_text
-    assert '"shortlist_size": 2' in summary_text
-    assert '"final_pool_size": 2' in summary_text
+    assert '"max_papers": 10' in summary_text
+    assert '"min_selection_score": 75.0' in summary_text
     assert '"ranking_results"' in summary_text
-    assert '"final_selection"' in summary_text
+    assert '"selected_results"' in summary_text
 
 
-def test_pipeline_uses_top_papers_preference_up_to_configured_cap(tmp_path: Path, monkeypatch) -> None:
-    config = make_app_config(tmp_path, max_papers=10)
+def test_pipeline_uses_configured_max_papers_for_selection_cap(tmp_path: Path, monkeypatch) -> None:
+    config = make_app_config(tmp_path, max_papers=5)
     papers = [make_paper(arxiv_id=f"2603.30{index:03d}", title=f"Paper {index}") for index in range(1, 7)]
-    preferences = SimpleNamespace(top_papers=5)
     monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher(papers))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker())
-    monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: preferences)
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **kwargs: FakeRanker(**kwargs))
+    monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
     monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
 
     exit_code = run(config, date(2026, 3, 29))
 
     assert exit_code == 0
     assert FakeRanker.last_max_papers == 5
-
-
-def test_pipeline_clamps_top_papers_preference_to_configured_cap(tmp_path: Path, monkeypatch) -> None:
-    config = make_app_config(tmp_path, max_papers=4)
-    papers = [make_paper(arxiv_id=f"2603.31{index:03d}", title=f"Paper {index}") for index in range(1, 7)]
-    preferences = SimpleNamespace(top_papers=8)
-    monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher(papers))
-    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker())
-    monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: preferences)
-    monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
-
-    exit_code = run(config, date(2026, 3, 30))
-
-    assert exit_code == 0
-    assert FakeRanker.last_max_papers == 4

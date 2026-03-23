@@ -32,10 +32,7 @@ def make_app_config(tmp_path: Path, **overrides) -> AppConfig:
         archive_name_pattern="{date}-weekly-arxiv.md",
         max_papers=10,
         arxiv_page_size=50,
-        ranking_shortlist_size=24,
-        ranking_final_pool_size=24,
-        ranking_min_selection_score=75.0,
-        ranking_passthrough_candidate_count=50,
+        min_selection_score=75.0,
         default_categories=("astro-ph.CO",),
         llm=LlmConfig(
             mode="cli",

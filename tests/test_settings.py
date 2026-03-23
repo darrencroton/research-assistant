@@ -12,10 +12,8 @@ def test_load_config_parses_explicit_llm_provider_settings(tmp_path: Path) -> No
         "[arxiv]\n"
         "default_categories = ['astro-ph.CO']\n"
         "page_size = 75\n"
-        "retrieval_pool_size = 12\n"
-        "final_pool_size = 7\n"
         "min_selection_score = 82.5\n"
-        "passthrough_candidate_count = 40\n\n"
+        "\n"
         "[llm]\n"
         "mode = 'api'\n"
         "provider = 'openai'\n"
@@ -37,10 +35,7 @@ def test_load_config_parses_explicit_llm_provider_settings(tmp_path: Path) -> No
     assert config.llm.provider == "openai"
     assert config.llm.model == "gpt-5.2"
     assert config.arxiv_page_size == 75
-    assert config.ranking_shortlist_size == 12
-    assert config.ranking_final_pool_size == 7
-    assert config.ranking_min_selection_score == 82.5
-    assert config.ranking_passthrough_candidate_count == 40
+    assert config.min_selection_score == 82.5
     assert config.llm.prompt_debug_file == (tmp_path / "archive" / "prompts" / "last.txt").resolve()
 
 
@@ -76,10 +71,7 @@ def test_load_config_uses_new_runtime_sections() -> None:
     assert config.weekly_template == Path("/tmp/re-ass-test/user_preferences/templates/weekly-note-template.md").resolve()
     assert config.preferences_file == Path("/tmp/re-ass-test/user_preferences/preferences.md").resolve()
     assert config.arxiv_page_size == 100
-    assert config.ranking_shortlist_size == 24
-    assert config.ranking_final_pool_size == 24
-    assert config.ranking_min_selection_score == 75.0
-    assert config.ranking_passthrough_candidate_count == 50
+    assert config.min_selection_score == 75.0
     assert config.llm.effort is None
     assert config.llm.prompt_debug_file == Path("/tmp/re-ass-test/tmp/paper_summariser/prompt.txt").resolve()
 
@@ -114,20 +106,6 @@ def test_load_config_supports_legacy_arxiv_max_results_key(tmp_path: Path) -> No
     config = load_config(config_path)
 
     assert config.arxiv_page_size == 80
-
-
-def test_load_config_supports_legacy_shortlist_size_key(tmp_path: Path) -> None:
-    config_path = tmp_path / "settings.toml"
-    config_path.write_text(
-        "[arxiv]\n"
-        "default_categories = ['astro-ph.CO']\n"
-        "shortlist_size = 11\n",
-        encoding="utf-8",
-    )
-
-    config = load_config(config_path)
-
-    assert config.ranking_shortlist_size == 11
 
 
 def test_load_config_supports_markdown_links_and_rotation_day(tmp_path: Path) -> None:
