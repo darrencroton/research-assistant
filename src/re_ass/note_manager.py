@@ -7,6 +7,8 @@ from pathlib import Path
 import re
 import shutil
 
+import pendulum
+
 from re_ass.models import ProcessedPaper
 from re_ass.paper_identity import render_link
 from re_ass.settings import AppConfig
@@ -53,6 +55,8 @@ DEFAULT_PREFERENCES_FILE = """# Arxiv Priorities
 5. Two point correlation function
 6. Galaxy environments
 """
+
+_DAILY_TEMPLATE_DATE_PATTERN = re.compile(r"\{\{\s*date(?:\s*:\s*([^}]+?))?\s*\}\}")
 
 
 def _find_heading_line(lines: list[str], heading: str) -> int | None:
@@ -217,6 +221,18 @@ def _replace_weekly_title(text: str, title: str) -> str:
     return f"{title}\n\n{text.lstrip()}"
 
 
+def _render_daily_template(template: str, run_date: date) -> str:
+    render_date = pendulum.datetime(run_date.year, run_date.month, run_date.day, tz="UTC")
+
+    def replace_date(match: re.Match[str]) -> str:
+        format_string = match.group(1)
+        if format_string is None:
+            return run_date.isoformat()
+        return render_date.format(format_string.strip(), locale="en")
+
+    return _DAILY_TEMPLATE_DATE_PATTERN.sub(replace_date, template)
+
+
 class NoteManager:
     """Creates and updates user-facing notes through managed heading sections."""
 
@@ -281,7 +297,7 @@ class NoteManager:
             text = daily_path.read_text(encoding="utf-8")
         else:
             template = self.config.daily_template.read_text(encoding="utf-8")
-            text = template.replace("{{date}}", run_date.isoformat())
+            text = _render_daily_template(template, run_date)
 
         link = render_link(
             top_paper.filename_stem,

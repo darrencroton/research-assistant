@@ -291,6 +291,26 @@ def test_pipeline_backfill_leaves_current_weekly_summary_unchanged(tmp_path: Pat
     assert not (config.weekly_notes_dir / "2026-03-23-weekly-arxiv.md").exists()
 
 
+def test_pipeline_backfill_renders_daily_template_for_target_date(tmp_path: Path, monkeypatch) -> None:
+    config = make_app_config(tmp_path)
+    config.daily_template.parent.mkdir(parents=True, exist_ok=True)
+    config.daily_template.write_text(
+        "# DAILY NOTE: {{date:dddd Do MMMM YYYY}}\n\n##  TODAY'S TOP PAPER\n",
+        encoding="utf-8",
+    )
+    paper = make_paper(arxiv_id="2603.30036", title="Backfill Template Paper")
+    monkeypatch.setattr("re_ass.pipeline.ArxivFetcher", lambda **_kwargs: FakeFetcher([paper]))
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **_kwargs: FakeRanker())
+    monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: FakeGenerationService())
+
+    exit_code = run(config, date(2026, 3, 23), backfill=True)
+
+    assert exit_code == 0
+    daily_text = (config.daily_notes_dir / "2026-03-23.md").read_text(encoding="utf-8")
+    assert daily_text.startswith("# DAILY NOTE: Monday 23rd March 2026\n")
+
+
 def test_pipeline_records_interval_and_ranking_diagnostics(tmp_path: Path, monkeypatch) -> None:
     config = make_app_config(tmp_path)
     papers = [

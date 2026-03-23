@@ -68,6 +68,35 @@ def test_update_daily_note_appends_block_when_heading_is_missing(tmp_path: Path)
     assert "##  TODAY'S TOP PAPER" in daily_text
 
 
+def test_update_daily_note_renders_obsidian_style_date_template(tmp_path: Path) -> None:
+    manager = NoteManager(make_app_config(tmp_path))
+    manager.bootstrap()
+    manager.config.daily_template.write_text(
+        "# DAILY NOTE: {{date:dddd Do MMMM YYYY}}\n\n##  TODAY'S TOP PAPER\n",
+        encoding="utf-8",
+    )
+
+    manager.update_daily_note(date(2026, 3, 23), make_processed_paper(tmp_path))
+
+    daily_text = (manager.config.daily_notes_dir / "2026-03-23.md").read_text(encoding="utf-8")
+    assert daily_text.startswith("# DAILY NOTE: Monday 23rd March 2026\n")
+
+
+def test_update_daily_note_renders_multiple_date_placeholders(tmp_path: Path) -> None:
+    manager = NoteManager(make_app_config(tmp_path))
+    manager.bootstrap()
+    manager.config.daily_template.write_text(
+        "# {{date}}\n\nDate title: {{date:dddd Do MMMM YYYY}}\n\n##  TODAY'S TOP PAPER\n",
+        encoding="utf-8",
+    )
+
+    manager.update_daily_note(date(2026, 3, 23), make_processed_paper(tmp_path))
+
+    daily_text = (manager.config.daily_notes_dir / "2026-03-23.md").read_text(encoding="utf-8")
+    assert daily_text.startswith("# 2026-03-23\n")
+    assert "Date title: Monday 23rd March 2026" in daily_text
+
+
 def test_update_weekly_note_appends_missing_sections(tmp_path: Path) -> None:
     manager = NoteManager(make_app_config(tmp_path))
     manager.bootstrap()

@@ -112,6 +112,11 @@ If you use Obsidian:
 
 The app only edits content inside managed markers.
 
+Daily note templates support:
+
+- `{{date}}` for the ISO run date, for example `2026-03-23`
+- `{{date:...}}` for Moment-like date formatting via Pendulum, for example `{{date:dddd Do MMMM YYYY}}`
+
 - daily marker: `re-ass:daily-top-paper`
 - weekly markers: `re-ass:weekly-synthesis`, `re-ass:weekly-daily-additions`
 
