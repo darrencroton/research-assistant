@@ -259,16 +259,19 @@ def test_pipeline_backfill_leaves_current_weekly_summary_unchanged(tmp_path: Pat
     manager = NoteManager(config)
     manager.bootstrap()
     manager.weekly_note_path.write_text(
-        "# This Week's ArXiv Overview 16-22 March 2026\n\n"
-        "## Synthesis\n"
+        "# ARXIV PAPERS FOR THE WEEK 16th - 20th March 2026\n\n"
+        "## SYNTHESIS\n"
         "\n"
         "Live synthesis.\n"
         "\n"
         "---\n"
-        "## Daily Additions\n"
+        "## DAILY ADDITIONS\n"
         "\n"
         "### Sunday 22nd\n"
-        "- Existing summary\n"
+        "\n"
+        "**Title:** [[Existing]]\n"
+        "\n"
+        "**Summary:** Existing summary\n"
         "\n",
         encoding="utf-8",
     )

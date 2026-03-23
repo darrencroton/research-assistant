@@ -33,6 +33,7 @@ def test_update_daily_note_preserves_content_outside_managed_marker(tmp_path: Pa
     assert "**Title:**" in daily_text
     assert "**Authors:**" not in daily_text
     assert "\n\n**Summary:** First summary." in daily_text
+    assert "\n\n[[this-weeks-arxiv-papers|See all of this week's arXiv papers]]" in daily_text
     assert "**Summary:** First summary." in daily_text
     assert "## TASKS" in daily_text
     assert "First summary." in daily_text
@@ -46,8 +47,10 @@ def test_update_weekly_note_replaces_same_day_section(tmp_path: Path) -> None:
     manager.update_weekly_note(date(2026, 3, 24), [make_processed_paper(tmp_path, micro_summary="Second summary.")], "Updated synthesis.")
 
     weekly_text = manager.weekly_note_path.read_text(encoding="utf-8")
-    assert weekly_text.startswith("# This Week's ArXiv Overview 23-29 March 2026")
+    assert weekly_text.startswith("# ARXIV PAPERS FOR THE WEEK 23rd - 27th March 2026")
     assert weekly_text.count("### Tuesday 24th") == 1
+    assert weekly_text.count("**Title:**") == 1
+    assert "\n\n**Summary:** Second summary." in weekly_text
     assert "Updated synthesis." in weekly_text
     assert "Second summary." in weekly_text
 
@@ -61,22 +64,22 @@ def test_update_daily_note_appends_block_when_heading_is_missing(tmp_path: Path)
     manager.update_daily_note(date(2026, 3, 22), make_processed_paper(tmp_path))
 
     daily_text = daily_path.read_text(encoding="utf-8")
-    assert daily_text.endswith("**Summary:** Short summary.\n")
+    assert daily_text.endswith("[[this-weeks-arxiv-papers|See all of this week's arXiv papers]]\n")
     assert "##  TODAY'S TOP PAPER" in daily_text
 
 
 def test_update_weekly_note_appends_missing_sections(tmp_path: Path) -> None:
     manager = NoteManager(make_app_config(tmp_path))
     manager.bootstrap()
-    manager.weekly_note_path.write_text("# This Week's ArXiv Overview\n\nNotes before managed sections.\n", encoding="utf-8")
+    manager.weekly_note_path.write_text("# ARXIV PAPERS FOR THE WEEK\n\nNotes before managed sections.\n", encoding="utf-8")
 
     manager.update_weekly_note(date(2026, 3, 24), [make_processed_paper(tmp_path)], "Fresh synthesis.")
 
     weekly_text = manager.weekly_note_path.read_text(encoding="utf-8")
     assert "Notes before managed sections." in weekly_text
-    assert "## Synthesis" in weekly_text
+    assert "## SYNTHESIS" in weekly_text
     assert "Fresh synthesis." in weekly_text
-    assert "## Daily Additions" in weekly_text
+    assert "## DAILY ADDITIONS" in weekly_text
     assert "### Tuesday 24th" in weekly_text
 
 
@@ -84,7 +87,7 @@ def test_rotate_weekly_note_archives_previous_note_on_rotation_day(tmp_path: Pat
     manager = NoteManager(make_app_config(tmp_path))
     manager.bootstrap()
     manager.weekly_note_path.write_text(
-        "# This Week's ArXiv Overview 16-22 March 2026\n\n## Synthesis\n\nOld synthesis.\n\n---\n## Daily Additions\n\n### Monday 16th\n- Entry\n",
+        "# ARXIV PAPERS FOR THE WEEK 16th - 20th March 2026\n\n## SYNTHESIS\n\nOld synthesis.\n\n---\n## DAILY ADDITIONS\n\n### Monday 16th\n\n**Title:** [[Entry]]\n\n**Summary:** Test summary.\n",
         encoding="utf-8",
     )
 

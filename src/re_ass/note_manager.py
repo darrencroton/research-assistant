@@ -27,13 +27,13 @@ DEFAULT_DAILY_TEMPLATE = """# {{date}}
 ##  TODAY'S TOP PAPER
 """
 
-DEFAULT_WEEKLY_TEMPLATE = """# This Week's ArXiv Overview
+DEFAULT_WEEKLY_TEMPLATE = """# ARXIV PAPERS FOR THE WEEK
 
-## Synthesis
+## SYNTHESIS
 *(A synthesis of this week's papers will be automatically generated here. Max 100 words.)*
 
 ---
-## Daily Additions
+## DAILY ADDITIONS
 """
 
 DEFAULT_PREFERENCES_FILE = """# Arxiv Priorities
@@ -134,13 +134,45 @@ def _render_section(heading: str, body: str, *, has_suffix: bool) -> str:
     return section
 
 
+def _parse_day_blocks(existing_body: str) -> list[tuple[str, str]]:
+    body = existing_body.strip()
+    if not body:
+        return []
+
+    matches = list(re.finditer(r"(?m)^### .+$", body))
+    if not matches:
+        return []
+
+    blocks: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
+        block = body[start:end].strip()
+        if block.endswith("---"):
+            block = block[:-3].rstrip()
+        heading = match.group(0).removeprefix("### ").strip()
+        blocks.append((heading, block))
+    return blocks
+
+
 def _upsert_day_block(existing_body: str, day_heading: str, new_block: str) -> str:
-    pattern = re.compile(rf"(?ms)^### {re.escape(day_heading)}\n.*?(?=^### |\Z)")
-    if pattern.search(existing_body):
-        return pattern.sub(new_block.rstrip(), existing_body, count=1).strip()
-    if not existing_body.strip():
+    blocks = _parse_day_blocks(existing_body)
+    if not blocks:
         return new_block.rstrip()
-    return f"{existing_body.rstrip()}\n\n{new_block.rstrip()}".strip()
+
+    updated_blocks: list[str] = []
+    replaced = False
+    for heading, block in blocks:
+        if heading == day_heading:
+            updated_blocks.append(new_block.rstrip())
+            replaced = True
+        else:
+            updated_blocks.append(block.rstrip())
+
+    if not replaced:
+        updated_blocks.append(new_block.rstrip())
+
+    return "\n\n---\n\n".join(updated_blocks).strip()
 
 
 def _ordinal(day_number: int) -> str:
@@ -163,17 +195,17 @@ def _week_start(run_date: date, rotation_day: str) -> date:
 
 def _format_week_range(run_date: date, rotation_day: str) -> str:
     start = _week_start(run_date, rotation_day)
-    end = start + timedelta(days=6)
+    end = start + timedelta(days=4)
 
     if start.year == end.year and start.month == end.month:
-        return f"{start.day}-{end.day} {start.strftime('%B %Y')}"
+        return f"{_ordinal(start.day)} - {_ordinal(end.day)} {start.strftime('%B %Y')}"
     if start.year == end.year:
-        return f"{start.day} {start.strftime('%B')} - {end.day} {end.strftime('%B %Y')}"
-    return f"{start.day} {start.strftime('%B %Y')} - {end.day} {end.strftime('%B %Y')}"
+        return f"{_ordinal(start.day)} {start.strftime('%B')} - {_ordinal(end.day)} {end.strftime('%B %Y')}"
+    return f"{_ordinal(start.day)} {start.strftime('%B %Y')} - {_ordinal(end.day)} {end.strftime('%B %Y')}"
 
 
 def _weekly_title(run_date: date, rotation_day: str) -> str:
-    return f"# This Week's ArXiv Overview {_format_week_range(run_date, rotation_day)}"
+    return f"# ARXIV PAPERS FOR THE WEEK {_format_week_range(run_date, rotation_day)}"
 
 
 def _replace_weekly_title(text: str, title: str) -> str:
@@ -241,7 +273,7 @@ class NoteManager:
 
     def read_weekly_synthesis(self) -> str:
         text = self.ensure_weekly_note_exists().read_text(encoding="utf-8")
-        return _read_section(text, "## Synthesis")
+        return _read_section(text, "## SYNTHESIS")
 
     def update_daily_note(self, run_date: date, top_paper: ProcessedPaper) -> Path:
         daily_path = self.config.daily_notes_dir / f"{run_date.isoformat()}.md"
@@ -262,6 +294,8 @@ class NoteManager:
                 f"**Title:** {link}",
                 "",
                 f"**Summary:** {top_paper.micro_summary}",
+                "",
+                "[[this-weeks-arxiv-papers|See all of this week's arXiv papers]]",
             ]
         )
         updated = _replace_section(text, "##  TODAY'S TOP PAPER", block)
@@ -272,17 +306,23 @@ class NoteManager:
         weekly_path = self.ensure_weekly_note_exists()
         text = weekly_path.read_text(encoding="utf-8")
         updated = _replace_weekly_title(text, _weekly_title(run_date, self.config.rotation_day))
-        updated = _replace_section(updated, "## Synthesis", synthesis.strip())
+        updated = _replace_section(updated, "## SYNTHESIS", synthesis.strip())
 
-        existing_additions = _read_section(updated, "## Daily Additions")
+        existing_additions = _read_section(updated, "## DAILY ADDITIONS")
         day_heading = _format_day_heading(run_date)
         entries = [
-            f"- {render_link(paper.filename_stem, paper.paper.title, style=self.config.link_style, from_subdir='weekly-notes')} - {paper.micro_summary}"
+            "\n".join(
+                [
+                    f"**Title:** {render_link(paper.filename_stem, paper.paper.title, style=self.config.link_style, from_subdir='weekly-notes')}",
+                    "",
+                    f"**Summary:** {paper.micro_summary}",
+                ]
+            )
             for paper in papers
         ]
-        day_block = "\n".join([f"### {day_heading}", *entries])
+        day_block = "\n".join([f"### {day_heading}", "", "\n\n".join(entries)])
         additions = _upsert_day_block(existing_additions, day_heading, day_block)
-        updated = _replace_section(updated, "## Daily Additions", additions)
+        updated = _replace_section(updated, "## DAILY ADDITIONS", additions)
 
         weekly_path.write_text(updated.rstrip() + "\n", encoding="utf-8")
         return weekly_path
