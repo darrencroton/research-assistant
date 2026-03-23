@@ -1,70 +1,117 @@
 # ArXiv Research Assistant (`re-ass`)
 
-`research-assistant` fetches recent arXiv papers, ranks them against your interests, and writes:
+`re-ass` is a local arXiv triage tool for researchers. It fetches recent papers from the arXiv categories you care about, ranks them against your research priorities, and writes Markdown outputs you can keep as plain files or read inside a notes system such as Obsidian.
+
+It writes:
 
 - paper summaries to `output/summaries/`
 - daily notes to `output/daily-notes/`
 - a rolling weekly note to `output/weekly-notes/`
 - downloaded PDFs to `output/pdfs/`
 
-## Requirements
+## Quickstart
 
+### Requirements
+
+- Python `3.13+`
 - `uv` on `PATH`
-- one configured LLM provider
+- one supported LLM provider
 
-## New User Guides
+Supported providers:
 
-If you are setting this up for the first time, start with these guides:
+- CLI mode: `claude`, `codex`, `copilot`, `gemini`
+- API mode: `claude`, `openai`, `gemini`, `perplexity`, `ollama`
 
-- [Automation with `launchd`](scripts/launchd/README.md)
-- [Custom daily and weekly templates](user_preferences/templates/README.md)
-
-## Setup
-
-Run:
+### 1. Run setup
 
 ```bash
 ./scripts/setup.sh
 ```
 
-This installs dependencies, creates the working directories, creates your local configuration files in `user_preferences/`, and checks that the selected provider is ready to use.
+This installs dependencies, creates the working directories, and bootstraps your local config in `user_preferences/`.
 
-The default provider is `claude`. If you want a different provider, edit `user_preferences/settings.toml` after setup.
+The bootstrapped default provider is `claude`. If that is not the provider you plan to use, edit `user_preferences/settings.toml` after setup and then rerun `./scripts/setup.sh` to validate your chosen provider.
 
-Provider setup:
+### 2. Edit `user_preferences/settings.toml`
 
-- `claude`: run `claude auth login`
-- `codex`: run `codex login`, or `printenv OPENAI_API_KEY | codex login --with-api-key`
-- `copilot`: run `copilot login`, or set `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`
-- `gemini`: set `GEMINI_API_KEY`, or use Vertex AI credentials
-- API providers: set the required API key before running the app
+This file controls:
 
-For automation, your provider must already be authenticated for non-interactive use.
+- `[output]`: where summaries, notes, and PDFs are written
+- `[templates]`: which daily and weekly templates to use
+- `[preferences]`: which preferences file to read
+- `[notes]`: link style, weekly filename, rotation day, archive naming, managed headings
+- `[arxiv]`: fetch limits, ranking threshold, and maximum selected papers
+- `[llm]`: provider mode, provider name, model, and optional reasoning effort
 
-## Configure Before First Run
+Common provider setups:
 
-Edit these files after setup:
+- CLI `claude`: `mode = "cli"`, `provider = "claude"`, then run `claude auth login`
+- CLI `codex`: `mode = "cli"`, `provider = "codex"`, then run `codex login`, or `printenv OPENAI_API_KEY | codex login --with-api-key`
+- CLI `copilot`: `mode = "cli"`, `provider = "copilot"`, then run `copilot login`, or set `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`
+- CLI `gemini`: `mode = "cli"`, `provider = "gemini"`, then set `GEMINI_API_KEY`, or use Vertex AI credentials
+- API `claude`: `mode = "api"`, `provider = "claude"`, then set `ANTHROPIC_API_KEY`
+- API `openai`: `mode = "api"`, `provider = "openai"`, then set `OPENAI_API_KEY`
+- API `gemini`: `mode = "api"`, `provider = "gemini"`, then set `GOOGLE_API_KEY`
+- API `perplexity`: `mode = "api"`, `provider = "perplexity"`, then set `PERPLEXITY_API_KEY`
+- API `ollama`: `mode = "api"`, `provider = "ollama"`, and use `ollama_base_url` if you need a non-default local endpoint
 
-- `user_preferences/settings.toml`: provider, output paths, note settings
-- `user_preferences/preferences.md`: arXiv categories and ordered ranking priorities
+Example:
 
-Decide where you want your notes to live:
+```toml
+[llm]
+mode = "cli"
+provider = "codex"
+model = ""
+effort = ""
+```
+
+For scheduled automation, your chosen provider must already be authenticated for non-interactive use.
+
+### 3. Edit `user_preferences/preferences.md`
+
+This file defines your literature filter.
+
+- `## Categories` is required and must contain arXiv categories as bullet items.
+- Priorities must be written as numbered items.
+- You can use either one flat `## Priorities` list or split priorities into `## Priorities - Science` and `## Priorities - Methods`.
+
+Minimal complete example:
+
+```markdown
+# Arxiv Priorities
+
+## Categories
+- astro-ph.CO
+- astro-ph.GA
+
+## Priorities - Science
+1. Little red dots, LRDs, and compact dusty red JWST sources at high redshift
+2. Black holes and AGN in galaxies: SMBH growth, AGN triggering, AGN feedback, JWST AGN, merger-driven AGN; not GW-only MBH binary papers
+
+## Priorities - Methods
+1. Semi-analytic galaxy formation models: semi-analytic models, SAMs, L-Galaxies, SHARK, SAGE, the Somerville model, and model predictions
+2. Large observational surveys: SDSS, DESI, HSC, LSST, Euclid, Roman, JWST legacy fields, wide-field multiwavelength surveys, survey catalogues, and statistically powerful survey samples
+```
+
+Priority-writing guidance:
+
+- Keep each priority to one concrete line.
+- Use the terms, aliases, instruments, surveys, and contexts you actually care about.
+- Add a short exclusion when a topic has obvious near-misses.
+- With the science/method split, one direct match in each section can be enough; multiple matches are a bonus.
+- With a single flat `## Priorities` list, a strong direct match to one priority can be enough; multiple matches are a bonus.
+
+### 4. Decide where your notes should live
+
+You can:
 
 - keep the defaults and let `re-ass` write into `output/`
-- point output paths at folders inside your vault or notes directory
-- or symlink `output/` subdirectories into your vault
+- point `[output]` at folders inside your notes directory or vault
+- symlink `output/` subdirectories into your notes directory or vault
 
-Template options:
+If you want custom note templates, read [Custom daily and weekly templates](user_preferences/templates/README.md) before your first run.
 
-- `user_preferences/templates/daily-note-template.md`: default daily note template
-- `user_preferences/templates/weekly-note-template.md`: default weekly note template
-- or point `[templates]` in `user_preferences/settings.toml` at your own template files anywhere on disk
-
-If you want to bring your own note templates, read [Custom daily and weekly templates](user_preferences/templates/README.md) before your first run. The app updates exact heading sections, so template structure matters.
-
-## First Manual Run
-
-Run a manual test before setting up automation:
+### 5. Run once manually
 
 ```bash
 uv run re-ass
@@ -86,15 +133,7 @@ uv run re-ass --date 2026-03-21
 
 An explicit `--date` backfill updates that day's outputs without rotating the current weekly note.
 
-## Automation
-
-The repo includes a macOS `launchd` template and renderer in `scripts/launchd/`, but automation is not installed automatically for you.
-
-For setup, installation, schedule customisation, and troubleshooting, see:
-
-- [Automation with `launchd`](scripts/launchd/README.md)
-
-## Files
+## Directory Layout
 
 ```text
 output/
@@ -109,93 +148,50 @@ logs/
   history.log
   last-run.log
 user_preferences/
-  settings.toml               your configuration
-  preferences.md             your categories and priorities
-  defaults/                  repo default settings and preferences
+  settings.toml               your local configuration
+  preferences.md             your local categories and priorities
+  defaults/                  tracked default settings and preferences
   templates/                 built-in daily and weekly templates
 ```
 
-## Configuration
+`state/papers/` is the authoritative completion record. Existing notes or PDFs alone do not mark a paper as completed.
 
-Main config: `user_preferences/settings.toml`
+## Ranking and Selection
 
-- `[output]`: where summaries, notes, and PDFs are written
-- `[templates]`: which daily and weekly templates to use
-- `[preferences]`: which preferences file to read
-- `[notes]`: link style, weekly filename, rotation day, archive naming, managed headings
-- `[arxiv]`: limits and ranking threshold
-- `[llm]`: provider and model settings
+`re-ass` scores every fetched candidate against the priorities in `user_preferences/preferences.md`, keeps papers at or above `[arxiv].min_selection_score`, and then caps the final selection at `[arxiv].max_papers`.
 
-`[notes]` must define these managed-heading settings:
+The categories section controls which arXiv feeds are fetched in the first place. The priorities section then tells the ranker what counts as a strong match within that pool.
 
-- `daily_top_paper_heading`
-- `weekly_synthesis_heading`
-- `weekly_additions_heading`
+## Templates and Obsidian
 
-`[llm]` also supports an optional `effort` setting for CLI providers:
+If you use Obsidian or another notes app:
 
-- `effort = ""`: use the provider default
-- `effort = "low"`, `"medium"`, or `"high"`: set reasoning effort for `claude`, `codex`, or `copilot`
-- `gemini` currently ignores `effort` and logs a warning
-
-The ranker scores every fetched candidate against the priorities in `user_preferences/preferences.md`, whether they are written as one ordered list or split into science and methods, keeps papers at or above `[arxiv].min_selection_score`, and then caps the final selection at `[arxiv].max_papers`.
-
-Priority-writing guidance:
-
-- Keep each priority to one concrete line.
-- Use specific terms, aliases, and contexts you care about.
-- Add a short exclusion when a topic has obvious near-misses.
-- If you want conjunctive matching, split priorities into `## Priorities - Science` and `## Priorities - Methods`.
-- With that split, a paper is only treated as a strong fit if it matches at least one science priority and at least one method priority.
-- With a single flat `## Priorities` list, a strong direct match to one priority can be enough; multiple matches are a bonus.
-- With the science/method split, one direct match in each section can be enough; multiple matches are a bonus.
-
-Example:
-
-```markdown
-## Priorities - Science
-1. Little red dots, LRDs, and compact dusty red JWST sources at high redshift
-2. Black holes and AGN in galaxies: SMBH growth, AGN triggering, AGN feedback, JWST AGN, merger-driven AGN; not GW-only MBH binary papers
-
-## Priorities - Methods
-1. Semi-analytic galaxy formation models: semi-analytic models, SAMs, L-Galaxies, SHARK, SAGE, the Somerville model, and model predictions
-2. Large observational surveys: SDSS, DESI, HSC, LSST, Euclid, Roman, JWST legacy fields, wide-field multiwavelength surveys, survey catalogues, and statistically powerful survey samples
-```
-
-## Obsidian
-
-If you use Obsidian:
-
-- keep your templates in the vault and point `[templates]` in `user_preferences/settings.toml` at them
-- either point `[output]` directories directly into the vault or symlink `output/summaries/`, `output/daily-notes/`, and `output/weekly-notes/` into the vault
+- keep your templates in the vault and point `[templates]` at them
+- point `[output]` directories directly into the vault, or symlink the generated directories into it
 - keep `notes.link_style = "wikilink"` for Obsidian-style links, or switch to `markdown` for relative Markdown links
 
-## Templates
+Template rules:
 
-The app updates specific sections in your note templates by exact heading text.
+- the daily template must contain whatever `notes.daily_top_paper_heading` is set to
+- the weekly template must contain whatever `notes.weekly_synthesis_heading` and `notes.weekly_additions_heading` are set to
+- daily templates support `{{date}}` and `{{date:...}}`
+- the first `#` heading in the weekly template is rewritten to include the current week range
+- content outside managed sections is left unchanged
 
-Daily note templates support:
+For full examples and common mistakes, see [Custom daily and weekly templates](user_preferences/templates/README.md).
 
-- `{{date}}` for the ISO run date, for example `2026-03-23`
-- `{{date:...}}` for Moment-like date formatting via Pendulum, for example `{{date:dddd Do MMMM YYYY}}`
+## Automation
 
-Required headings:
+The repo includes a macOS `launchd` template and renderer in `scripts/launchd/`, but automation is optional and is not installed automatically.
 
-- daily template: whatever `notes.daily_top_paper_heading` is set to, default `## TODAY'S TOP PAPER`
-- weekly template: whatever `notes.weekly_synthesis_heading` is set to, default `## SYNTHESIS`
-- weekly template: whatever `notes.weekly_additions_heading` is set to, default `## DAILY ADDITIONS`
-
-The first `#` heading in the weekly template is also rewritten to include the current week range.
-
-Content outside those managed sections is left unchanged. If `user_preferences/settings.toml` or `user_preferences/preferences.md` is missing, `re-ass` now fails fast instead of recreating them at runtime. For full examples and common mistakes, see:
-
-- [Custom daily and weekly templates](user_preferences/templates/README.md)
+Only install automation after a manual run succeeds. For setup, schedule customisation, and troubleshooting, see [Automation with `launchd`](scripts/launchd/README.md).
 
 ## Troubleshooting
 
-- If `./scripts/setup.sh` fails, your provider is usually not configured for non-interactive use yet.
+- If setup reports that provider validation was skipped for the freshly bootstrapped default config, edit `[llm]` in `user_preferences/settings.toml` and rerun `./scripts/setup.sh`.
+- If setup or a manual run fails after you have chosen a provider, that provider is usually not installed or not authenticated for non-interactive use yet.
 - If a scheduled run does not behave as expected, check `logs/last-run.log`, `logs/launchd.stdout.log`, and `logs/launchd.stderr.log`.
-- If `re-ass` writes its paper section at the end of a note instead of where you wanted it, your template heading does not exactly match the required heading text.
+- If `re-ass` writes its managed section at the end of a note instead of where you expected it, your template heading does not exactly match the configured heading text.
 - Machine-readable diagnostics are written to `state/runs/`.
 
 ## Validation

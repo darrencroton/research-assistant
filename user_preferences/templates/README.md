@@ -18,6 +18,8 @@ daily_template = "/path/to/your/daily-template.md"
 weekly_template = "/path/to/your/weekly-template.md"
 ```
 
+Those template files must already exist. `re-ass` uses them to create output notes, but it does not create the template files for you.
+
 On first use, `re-ass` reads those template files and writes output notes into your configured output directories.
 
 ## Daily template requirements
@@ -35,7 +37,7 @@ That section is where `re-ass` writes the selected top paper for the day.
 Important details:
 
 - Keep the heading text exact, including capitalisation.
-- The current default uses two spaces after `##`. Copy it exactly if you keep the default setting.
+- The current default uses one space after `##`. Copy it exactly if you keep the default setting.
 - Anything under that heading is managed by `re-ass` and may be replaced.
 - Content outside that heading is left alone.
 - If the heading is missing, `re-ass` appends a fresh managed section at the end of the daily note.

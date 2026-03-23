@@ -48,23 +48,13 @@ This writes the rendered plist to:
 tmp/launchd/com.user.re-ass.plist
 ```
 
-## Install the default 7:00 AM schedule
+The rendered plist contains absolute paths for `uv`, the repo root, and the log directory. If you move this repo, reinstall `uv` somewhere else, or want to pick up a different `uv` binary, rerun `./scripts/launchd/render-plist.sh` and reinstall the LaunchAgent.
 
-If the default daily `7:00 AM` schedule is fine, install it like this:
+## Optional: customise the schedule
 
-```bash
-REPO_ROOT="/path/to/research-assistant"
-mkdir -p ~/Library/LaunchAgents
-cp "$REPO_ROOT/tmp/launchd/com.user.re-ass.plist" \
-  ~/Library/LaunchAgents/com.user.re-ass.plist
-plutil -lint ~/Library/LaunchAgents/com.user.re-ass.plist
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.user.re-ass.plist 2>/dev/null || true
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.re-ass.plist
-```
+If you want anything other than the default daily `7:00 AM` schedule, edit the rendered plist before installing it.
 
-## Customise the schedule
-
-Open the rendered plist and edit the `StartCalendarInterval` section before copying it into `~/Library/LaunchAgents/`.
+Open the rendered plist and edit the `StartCalendarInterval` section:
 
 The default template looks like this:
 
@@ -103,7 +93,19 @@ Replace that block with:
 - `6`: Saturday
 - `0` or `7`: Sunday
 
-After editing, copy the plist into `~/Library/LaunchAgents/`, validate it, and bootstrap it as shown above.
+## Install the LaunchAgent
+
+If you kept the default schedule, install the rendered plist as-is. If you changed the schedule, install your edited version.
+
+```bash
+REPO_ROOT="/path/to/research-assistant"
+mkdir -p ~/Library/LaunchAgents
+cp "$REPO_ROOT/tmp/launchd/com.user.re-ass.plist" \
+  ~/Library/LaunchAgents/com.user.re-ass.plist
+plutil -lint ~/Library/LaunchAgents/com.user.re-ass.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.user.re-ass.plist 2>/dev/null || true
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.re-ass.plist
+```
 
 ## Test the installed job
 

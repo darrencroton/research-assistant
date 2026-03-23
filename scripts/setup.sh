@@ -13,39 +13,4 @@ cd "$repo_root"
 
 uv sync --group dev
 
-mkdir -p \
-  output/summaries \
-  output/daily-notes \
-  output/weekly-notes \
-  output/pdfs \
-  state/papers \
-  state/runs \
-  logs \
-  tmp/paper_summariser \
-  tmp/launchd
-
-uv run python - <<'PY'
-import sys
-
-from re_ass.bootstrap import ensure_user_preferences
-from re_ass.generation_service import GenerationService
-from re_ass.settings import load_config
-
-created = ensure_user_preferences()
-for path in created:
-    print(f"Bootstrapped user preference file: {path}")
-
-config = load_config()
-try:
-    GenerationService(config=config.llm)
-except Exception as error:
-    print(
-        f"LLM provider validation failed for {config.llm.mode}/{config.llm.provider}: {error}",
-        file=sys.stderr,
-    )
-    raise SystemExit(1)
-
-print(f"Validated LLM provider prerequisites: {config.llm.mode}/{config.llm.provider}")
-PY
-
-printf 'Setup complete.\n'
+uv run python -m re_ass.setup
