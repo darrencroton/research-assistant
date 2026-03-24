@@ -13,11 +13,9 @@ The rendered plist uses a default schedule of `7:00 AM` every day. If that works
 
 Make sure these steps work first:
 
-1. Run setup:
+1. From the repo root, run setup:
 
    ```bash
-   REPO_ROOT="/path/to/research-assistant"
-   cd "$REPO_ROOT"
    ./scripts/setup.sh
    ```
 
@@ -49,6 +47,8 @@ tmp/launchd/com.user.re-ass.plist
 ```
 
 The rendered plist contains absolute paths for `uv`, the repo root, and the log directory. If you move this repo, reinstall `uv` somewhere else, or want to pick up a different `uv` binary, rerun `./scripts/launchd/render-plist.sh` and reinstall the LaunchAgent.
+
+The rendered plist also carries a concrete `PATH` built from the shell that ran `render-plist.sh`, plus standard macOS command directories. This is important for Homebrew-installed provider CLIs such as `copilot`, `codex`, `claude`, or `gemini`, because `launchd` does not inherit your interactive shell PATH by default.
 
 ## Optional: customise the schedule
 
@@ -97,21 +97,25 @@ Replace that block with:
 
 ## Install the LaunchAgent
 
-If you kept the default schedule, install the rendered plist as-is. If you changed the schedule, install your edited version.
+From the repo root, run:
 
 ```bash
-REPO_ROOT="/path/to/research-assistant"
-mkdir -p ~/Library/LaunchAgents
-cp "$REPO_ROOT/tmp/launchd/com.user.re-ass.plist" \
-  ~/Library/LaunchAgents/com.user.re-ass.plist
-plutil -lint ~/Library/LaunchAgents/com.user.re-ass.plist
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.user.re-ass.plist 2>/dev/null || true
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.re-ass.plist
+./scripts/launchd/install-plist.sh
 ```
+
+This installs `tmp/launchd/com.user.re-ass.plist`, validates it, copies it into `~/Library/LaunchAgents/`, and reloads the LaunchAgent.
+
+The intended workflow is:
+
+1. Run `./scripts/launchd/render-plist.sh`
+2. Edit `tmp/launchd/com.user.re-ass.plist` if you want a custom schedule
+3. Run `./scripts/launchd/install-plist.sh`
+
+You can also pass an explicit plist path as the first argument if you want to install a different file.
 
 ## Test the installed job
 
-Run the job immediately:
+Run the job immediately if you want to trigger a real `re-ass` run now. This will fetch and process the latest available papers right away, instead of waiting for the scheduled time.
 
 ```bash
 launchctl kickstart -k gui/$(id -u)/com.user.re-ass
@@ -120,10 +124,9 @@ launchctl kickstart -k gui/$(id -u)/com.user.re-ass
 Then inspect the logs:
 
 ```bash
-REPO_ROOT="/path/to/research-assistant"
-tail -n 50 "$REPO_ROOT/logs/last-run.log"
-tail -n 50 "$REPO_ROOT/logs/launchd.stdout.log"
-tail -n 50 "$REPO_ROOT/logs/launchd.stderr.log"
+tail -n 50 logs/last-run.log
+tail -n 50 logs/launchd.stdout.log
+tail -n 50 logs/launchd.stderr.log
 ```
 
 `re-ass` also writes run diagnostics under:
@@ -138,6 +141,7 @@ state/papers/
 - `launchd` uses your Mac's local timezone.
 - If your Mac is asleep when a run is due, `launchd` coalesces missed calendar events and runs the job after wake.
 - `re-ass` tracks prior successful runs, so scheduled runs continue from the previous successful interval rather than reprocessing the whole history.
+- If you reinstall or move the provider CLI binary, or your PATH changes, rerun `./scripts/launchd/render-plist.sh` and reinstall the LaunchAgent so the updated PATH is captured.
 
 ## Updating or removing the job
 

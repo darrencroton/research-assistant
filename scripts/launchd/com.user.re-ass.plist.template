@@ -14,6 +14,11 @@
     </array>
     <key>WorkingDirectory</key>
     <string>__REPO_ROOT__</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__PATH__</string>
+    </dict>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
