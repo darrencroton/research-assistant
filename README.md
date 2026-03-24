@@ -187,7 +187,7 @@ Only install automation after a manual run succeeds. For setup, schedule customi
 
 ## Customisation
 
-- For different research fields, update `user_preferences/preferences.md` so Categories fetches the right arXiv feeds, then Priorities to best match the papers you are most interested in. You should probably also update the generated science-area tags to use a different vocabulary; see `src/re_ass/paper_summariser/project_knowledge/keywords.txt`.
+- For different research fields, update `user_preferences/preferences.md` so "Categories" fetches the right arXiv feeds, and "Priorities" best match the papers you are most interested in. You should probably also update the generated science-area tags to use a different vocabulary; see `src/re_ass/paper_summariser/project_knowledge/keywords.txt`.
 - To change the structure of each paper summary, edit `src/re_ass/paper_summariser/project_knowledge/paper-summary-template.md`. To change the summariser instructions themselves, edit `src/re_ass/paper_summariser/project_knowledge/system-prompt.md` and `src/re_ass/paper_summariser/project_knowledge/user-prompt.md`, which may be needed if you alter the paper summary template structure.
 
 ## Troubleshooting
