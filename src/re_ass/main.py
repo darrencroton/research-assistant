@@ -51,15 +51,66 @@ def configure_logging(config: AppConfig | None = None) -> None:
     )
 
 
+def _run_mode_label(*, backfill: bool) -> str:
+    return "backfill" if backfill else "automatic"
+
+
+def _append_file_log_separator() -> None:
+    for handler in logging.getLogger().handlers:
+        if not isinstance(handler, logging.FileHandler):
+            continue
+        handler.acquire()
+        try:
+            if handler.stream is None:
+                continue
+            handler.stream.write("\n")
+            handler.flush()
+        finally:
+            handler.release()
+
+
+def _log_run_started(*, invocation_date: date, backfill: bool) -> None:
+    LOGGER.info(
+        "===== re-ass run started (%s, invocation date %s) =====",
+        _run_mode_label(backfill=backfill),
+        invocation_date.isoformat(),
+    )
+
+
+def _log_run_finished(*, invocation_date: date, backfill: bool, exit_code: int) -> None:
+    LOGGER.info(
+        "===== re-ass run finished (%s, invocation date %s, exit code %s) =====",
+        _run_mode_label(backfill=backfill),
+        invocation_date.isoformat(),
+        exit_code,
+    )
+    _append_file_log_separator()
+
+
 def cli(argv: list[str] | None = None) -> int:
     """Parse arguments, load config, and hand off to the pipeline."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    backfill = args.date is not None
+    invocation_date = args.date or date.today()
 
     config = load_config(args.config)
 
     configure_logging(config)
+    _log_run_started(invocation_date=invocation_date, backfill=backfill)
 
     from re_ass.pipeline import run
 
-    return run(config, args.date, backfill=args.date is not None)
+    try:
+        exit_code = run(config, args.date, backfill=backfill)
+    except Exception:
+        LOGGER.exception(
+            "re-ass run crashed unexpectedly before a normal exit (%s, invocation date %s).",
+            _run_mode_label(backfill=backfill),
+            invocation_date.isoformat(),
+        )
+        _append_file_log_separator()
+        raise
+
+    _log_run_finished(invocation_date=invocation_date, backfill=backfill, exit_code=exit_code)
+    return exit_code
