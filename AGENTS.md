@@ -29,7 +29,19 @@
 - `src/re_ass/ranking.py`: full-pool LLM ranking and deterministic threshold/cap selection
 - `src/re_ass/paper_summariser/`: upstream-derived paper-note pipeline
 - `src/re_ass/`: application code around ranking, orchestration, state, and note updates
-- `docs/`: assumptions, reports, and follow-up notes
+
+## Pipeline Flow
+
+`main.py` (CLI entry) → `pipeline.py` (orchestration) → `arxiv_fetcher.py` (fetch candidates) → `ranking.py` (LLM rank + threshold/cap) → `note_manager.py` (daily/weekly note updates) → `state_store.py` (completion records)
+
+Supporting: `settings.py` (config loading), `preferences.py` (user preference parsing), `paper_summariser/` (PDF download + extraction), `generation_service.py` (LLM provider abstraction), `models.py` (shared data types)
+
+## Environment
+
+- Python >=3.13
+- First run: `scripts/setup.sh` (creates local config from defaults)
+- LLM provider credentials: configured via `user_preferences/settings.toml`; provider-specific API keys or CLI auth as needed
+- No linting/formatting tooling is configured
 
 ## Working Notes
 
@@ -39,13 +51,9 @@
 - Keep the paper-note path upstream-first: adapt at the app boundary instead of rewriting the provider/extraction stack.
 - Paper identity is stable and arXiv-derived; do not fall back to title-based duplicate suppression.
 - `user_preferences/preferences.md` should contain categories plus priorities only; users can keep a single ordered list or split priorities into `Science` and `Methods`, with strong fits requiring one hit from each section when both are present.
-- `scripts/setup.sh` and `GenerationService` should fail early when the configured CLI provider is present but not authenticated for non-interactive use.
-- Gemini CLI support in this repo is for API-key or Vertex-AI-backed automation credentials, not piggybacked interactive OAuth.
+- `scripts/setup.sh` and `GenerationService` must fail early when the configured CLI provider is present but not authenticated for non-interactive use. Gemini CLI support is for API-key or Vertex-AI-backed automation credentials only, not interactive OAuth.
 - Daily and weekly summary updates must stay inside managed markers.
-- Standard automatic runs are "reading note" runs: fetch the newest visible arXiv announcement batch and write it into today's daily note, even when the underlying arXiv announcement date is earlier.
-- Automatic catch-up after missed runs is still relative to today's note: the newest visible pending batch goes into today's daily note, then older pending batches backfill earlier weekday daily notes working backwards from today, skipping weekends.
-- Automatic catch-up should update whichever weekly notes those backfilled daily notes belong to, including archived prior-week notes when a catch-up spans a weekly boundary.
-- Explicit `--date` backfills are surgical single-day pulls: process exactly that announcement day, write/update that date's daily note, and do not rotate or rewrite the current weekly summary.
-- Automatic catch-up only covers announcement days still visible in arXiv recent listings; older recovery requires an explicit single-day backfill if the day is still visible at all.
+- Standard runs fetch the newest visible arXiv batch into today's daily note (even if the announcement date is earlier). Catch-up fills older pending batches into earlier weekday notes working backwards, skipping weekends, updating the relevant weekly notes (including archived prior-week notes across weekly boundaries). Catch-up only covers days still visible in arXiv recent listings.
+- Explicit `--date` backfills are surgical: process exactly that announcement day into that date's daily note; do not touch the current weekly summary.
 - `state/papers/*.json` is the authoritative completion record; note or PDF presence alone is not.
 - `state/runs/*.json` should remain audit-friendly and include full ranking plus final-selection diagnostics.
