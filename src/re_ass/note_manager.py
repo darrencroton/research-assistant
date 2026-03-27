@@ -475,7 +475,6 @@ class NoteManager:
         note_date: date,
         papers: list[ProcessedPaper],
         *,
-        interest_papers: list[ArxivPaper] | None = None,
         reference_date: date | None = None,
     ) -> str:
         reference_date = reference_date or note_date
@@ -484,7 +483,6 @@ class NoteManager:
             existing_additions,
             note_date,
             papers,
-            interest_papers=interest_papers,
             link_style=self.config.link_style,
         )
 

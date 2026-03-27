@@ -65,26 +65,16 @@ def _candidate_identity_summary(papers) -> list[str]:
 
 
 def _selected_summary(selection) -> list[dict[str, object]]:
-    results: list[dict[str, object]] = []
-    for item in selection.selected:
-        result = {
-            "paper_key": item.paper_key,
-            "source_id": item.source_id,
-            "title": item.paper.title,
-            "score": item.score,
-            "rationale": item.rationale,
-        }
-        if item.science_match is not None:
-            result["science_match"] = item.science_match
-        if item.method_match is not None:
-            result["method_match"] = item.method_match
-        results.append(result)
-    return results
+    return _ranked_items_summary(selection.selected)
 
 
 def _weekly_interest_summary(selection) -> list[dict[str, object]]:
+    return _ranked_items_summary(selection.weekly_interest)
+
+
+def _ranked_items_summary(items) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
-    for item in selection.weekly_interest:
+    for item in items:
         result = {
             "paper_key": item.paper_key,
             "source_id": item.source_id,
@@ -413,7 +403,7 @@ def _run_announcement_day(
                     reference_date=invocation_date,
                 )
                 run_summary["weekly_note_updated"] = True
-        elif weekly_interest_papers and not selected_papers and not backfill:
+        elif weekly_interest_papers and not successful_papers and not backfill:
             existing_synthesis = note_manager.read_weekly_synthesis(note_date, reference_date=invocation_date)
             note_manager.update_weekly_note(
                 note_date,
@@ -424,7 +414,7 @@ def _run_announcement_day(
             )
             run_summary["weekly_note_updated"] = True
             LOGGER.info(
-                "No papers were promoted to full summaries for announcement date %s; weekly interest bullets were added without updating the daily note or synthesis.",
+                "No papers completed successfully for announcement date %s; weekly interest bullets were added without updating the daily note or synthesis.",
                 announcement_date.isoformat(),
             )
         else:

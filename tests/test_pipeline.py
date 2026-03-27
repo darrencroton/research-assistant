@@ -490,6 +490,35 @@ def test_pipeline_with_zero_max_papers_skips_daily_note_and_synthesis_when_only_
     assert "## SYNTHESIS\n\n*(A synthesis of this week's papers will be automatically generated here. Max 100 words.)*" in weekly_text
 
 
+def test_pipeline_still_writes_weekly_interest_when_selected_papers_all_fail(tmp_path: Path, monkeypatch) -> None:
+    config = make_app_config(tmp_path, max_papers=1, always_summarize_score=90.0, min_selection_score=70.0)
+    selected = make_paper(arxiv_id="2603.30074", title="Failing Selected Paper")
+    weekly_only = make_paper(
+        arxiv_id="2603.30075",
+        title="Still Worth Listing",
+        authors=("Kevin Wang", "Yingjie Peng"),
+    )
+    selection = _build_selection([selected, weekly_only], selected=[selected], weekly_interest=[weekly_only])
+    generation_service = FakeGenerationService(failing_titles={"Failing Selected Paper"})
+    monkeypatch.setattr(
+        "re_ass.pipeline.ArxivFetcher",
+        lambda **_kwargs: FakeFetcher([selected, weekly_only], available_dates=[date(2026, 3, 25)]),
+    )
+    monkeypatch.setattr("re_ass.pipeline.PaperRanker", lambda **kwargs: FakeRanker(selection=selection, **kwargs))
+    monkeypatch.setattr("re_ass.pipeline.load_preferences", lambda *_args, **_kwargs: _preferences())
+    monkeypatch.setattr("re_ass.pipeline.GenerationService", lambda **_kwargs: generation_service)
+
+    exit_code = run(config, date(2026, 3, 25))
+
+    assert exit_code == 0
+    assert generation_service.weekly_synthesis_calls == []
+    assert not any(config.daily_notes_dir.glob("*.md"))
+    weekly_text = (config.weekly_notes_dir / config.weekly_note_file).read_text(encoding="utf-8")
+    assert "**Other papers of interest:**" in weekly_text
+    assert "Still Worth Listing" in weekly_text
+    assert "Failing Selected Paper" not in weekly_text
+
+
 def test_pipeline_records_announcement_and_ranking_diagnostics(tmp_path: Path, monkeypatch) -> None:
     config = make_app_config(tmp_path)
     papers = [

@@ -211,27 +211,6 @@ def test_preview_weekly_additions_merges_new_day_without_writing_file(tmp_path: 
     assert "### Tuesday 24th" not in weekly_text
 
 
-def test_preview_weekly_additions_can_include_interest_bullets_without_touching_file(tmp_path: Path) -> None:
-    manager = NoteManager(make_app_config(tmp_path))
-    manager.bootstrap()
-    interest = make_paper(
-        arxiv_id="2603.33333",
-        title="Overflow Candidate",
-        authors=("Eduardo Banados", "Chris Ledoux", "Yuan Peng"),
-    )
-
-    preview = manager.preview_weekly_additions(
-        date(2026, 3, 24),
-        [make_processed_paper(tmp_path, micro_summary="New summary.")],
-        interest_papers=[interest],
-    )
-
-    assert "**Other papers of interest:**" in preview
-    assert '- "*Overflow Candidate*", Banados E. et al., [arXiv:2603.33333](https://arxiv.org/abs/2603.33333)' in preview
-    weekly_text = manager.weekly_note_path.read_text(encoding="utf-8")
-    assert "**Other papers of interest:**" not in weekly_text
-
-
 def test_rotate_weekly_note_archives_previous_note_on_rotation_day(tmp_path: Path) -> None:
     manager = NoteManager(make_app_config(tmp_path))
     manager.bootstrap()
