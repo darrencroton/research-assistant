@@ -102,6 +102,15 @@ def _ranking_system_prompt() -> str:
     )
 
 
+def _ranking_response_shape(*, dual_match: bool) -> str:
+    if dual_match:
+        return (
+            '{"ranked_papers":[{"candidate_id":"arxiv:2603.12345","score":97,'
+            '"science_match":true,"method_match":true,"rationale":"short reason"}]}'
+        )
+    return '{"ranked_papers":[{"candidate_id":"arxiv:2603.12345","score":97,"rationale":"short reason"}]}'
+
+
 def _ranking_user_prompt(preferences: PreferenceConfig, candidates: list[ArxivPaper]) -> str:
     payload = [
         {
@@ -113,11 +122,7 @@ def _ranking_user_prompt(preferences: PreferenceConfig, candidates: list[ArxivPa
         for paper, paper_key, _source_id in _candidate_records(candidates)
     ]
     dual_match = _requires_dual_match(preferences)
-    response_shape = (
-        '{"ranked_papers":[{"candidate_id":"arxiv:2603.12345","score":97,"science_match":true,"method_match":true,"rationale":"short reason"}]}'
-        if dual_match
-        else '{"ranked_papers":[{"candidate_id":"arxiv:2603.12345","score":97,"rationale":"short reason"}]}'
-    )
+    response_shape = _ranking_response_shape(dual_match=dual_match)
     if dual_match:
         rules = (
             "- Rank every provided candidate exactly once.\n"
@@ -200,11 +205,7 @@ def _ranking_repair_user_prompt(
         for paper, paper_key, _source_id in _candidate_records(candidates)
     ]
     dual_match = _requires_dual_match(preferences)
-    response_shape = (
-        '{"ranked_papers":[{"candidate_id":"arxiv:2603.12345","score":97,"science_match":true,"method_match":true,"rationale":"short reason"}]}'
-        if dual_match
-        else '{"ranked_papers":[{"candidate_id":"arxiv:2603.12345","score":97,"rationale":"short reason"}]}'
-    )
+    response_shape = _ranking_response_shape(dual_match=dual_match)
     extra_rule = (
         "- science_match and method_match must be present for every candidate.\n"
         if dual_match

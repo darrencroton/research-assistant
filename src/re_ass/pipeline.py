@@ -9,7 +9,7 @@ import tempfile
 
 from re_ass.arxiv_fetcher import ArxivFetcher
 from re_ass.generation_service import GenerationService
-from re_ass.models import ProcessedPaper
+from re_ass.models import ArxivPaper, ProcessedPaper
 from re_ass.note_manager import NoteManager
 from re_ass.paper_identity import PaperIdentity, derive_identity
 from re_ass.preferences import load_preferences
@@ -38,20 +38,9 @@ def _ranking_summary(selection) -> list[dict[str, object]]:
     weekly_interest_keys = {item.paper_key for item in selection.weekly_interest}
     results: list[dict[str, object]] = []
     for item in selection.ranked:
-        result = {
-            "paper_key": item.paper_key,
-            "source_id": item.source_id,
-            "title": item.paper.title,
-            "published": item.paper.published.isoformat(),
-            "score": item.score,
-            "rationale": item.rationale,
-            "selected": item.paper_key in selected_keys,
-            "weekly_interest": item.paper_key in weekly_interest_keys,
-        }
-        if item.science_match is not None:
-            result["science_match"] = item.science_match
-        if item.method_match is not None:
-            result["method_match"] = item.method_match
+        result = _ranked_item_summary(item, include_published=True)
+        result["selected"] = item.paper_key in selected_keys
+        result["weekly_interest"] = item.paper_key in weekly_interest_keys
         results.append(result)
     return results
 
@@ -61,21 +50,55 @@ def _paper_keys(papers) -> list[str]:
 
 
 def _ranked_items_summary(items) -> list[dict[str, object]]:
-    results: list[dict[str, object]] = []
-    for item in items:
-        result = {
-            "paper_key": item.paper_key,
-            "source_id": item.source_id,
-            "title": item.paper.title,
-            "score": item.score,
-            "rationale": item.rationale,
-        }
-        if item.science_match is not None:
-            result["science_match"] = item.science_match
-        if item.method_match is not None:
-            result["method_match"] = item.method_match
-        results.append(result)
-    return results
+    return [_ranked_item_summary(item) for item in items]
+
+
+def _ranked_item_summary(item, *, include_published: bool = False) -> dict[str, object]:
+    result = {
+        "paper_key": item.paper_key,
+        "source_id": item.source_id,
+        "title": item.paper.title,
+        "score": item.score,
+        "rationale": item.rationale,
+    }
+    if include_published:
+        result["published"] = item.paper.published.isoformat()
+    if item.science_match is not None:
+        result["science_match"] = item.science_match
+    if item.method_match is not None:
+        result["method_match"] = item.method_match
+    return result
+
+
+def _paper_record_data(paper: ArxivPaper, identity: PaperIdentity) -> dict[str, str]:
+    return {
+        "paper_key": identity.paper_key,
+        "source_id": identity.source_id,
+        "title": paper.title,
+        "published": paper.published.isoformat(),
+        "filename_stem": identity.filename_stem,
+    }
+
+
+def _save_paper_status(
+    state_store: StateStore,
+    *,
+    paper: ArxivPaper,
+    identity: PaperIdentity,
+    status: str,
+    note_path: Path | None = None,
+    pdf_path: Path | None = None,
+    micro_summary: str | None = None,
+    last_error: str | None = None,
+) -> None:
+    state_store.save_paper_record(
+        **_paper_record_data(paper, identity),
+        status=status,
+        note_path=str(note_path) if note_path is not None else None,
+        pdf_path=str(pdf_path) if pdf_path is not None else None,
+        micro_summary=micro_summary,
+        last_error=last_error,
+    )
 
 
 def _replace_file(source_path: Path, destination_path: Path) -> None:
@@ -141,12 +164,10 @@ def _save_failure_record(
     micro_summary: str | None,
     error: Exception,
 ) -> None:
-    state_store.save_paper_record(
-        paper_key=identity.paper_key,
-        source_id=identity.source_id,
-        title=paper.title,
-        published=paper.published.isoformat(),
-        filename_stem=identity.filename_stem,
+    _save_paper_status(
+        state_store,
+        paper=paper,
+        identity=identity,
         status="failed",
         micro_summary=micro_summary,
         last_error=str(error),
@@ -226,33 +247,22 @@ def _process_selected_papers(
         with tempfile.TemporaryDirectory(prefix=f"re-ass-paper-{identity.source_id}-") as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             try:
-                state_store.save_paper_record(
-                    paper_key=identity.paper_key,
-                    source_id=identity.source_id,
-                    title=paper.title,
-                    published=paper.published.isoformat(),
-                    filename_stem=identity.filename_stem,
-                    status="selected",
-                )
+                _save_paper_status(state_store, paper=paper, identity=identity, status="selected")
 
                 micro_summary = generation_service.generate_micro_summary(paper)
-                state_store.save_paper_record(
-                    paper_key=identity.paper_key,
-                    source_id=identity.source_id,
-                    title=paper.title,
-                    published=paper.published.isoformat(),
-                    filename_stem=identity.filename_stem,
+                _save_paper_status(
+                    state_store,
+                    paper=paper,
+                    identity=identity,
                     status="micro_summary_generated",
                     micro_summary=micro_summary,
                 )
 
                 staged_pdf_path = generation_service.stage_pdf_download(paper, temp_dir)
-                state_store.save_paper_record(
-                    paper_key=identity.paper_key,
-                    source_id=identity.source_id,
-                    title=paper.title,
-                    published=paper.published.isoformat(),
-                    filename_stem=identity.filename_stem,
+                _save_paper_status(
+                    state_store,
+                    paper=paper,
+                    identity=identity,
                     status="pdf_downloaded",
                     micro_summary=micro_summary,
                 )
@@ -267,15 +277,13 @@ def _process_selected_papers(
                 final_note_path = config.summaries_dir / identity.note_filename
                 _replace_file(staged_note_path, final_note_path)
 
-                state_store.save_paper_record(
-                    paper_key=identity.paper_key,
-                    source_id=identity.source_id,
-                    title=paper.title,
-                    published=paper.published.isoformat(),
-                    filename_stem=identity.filename_stem,
+                _save_paper_status(
+                    state_store,
+                    paper=paper,
+                    identity=identity,
                     status="note_written",
-                    note_path=str(final_note_path),
-                    pdf_path=str(final_pdf_path),
+                    note_path=final_note_path,
+                    pdf_path=final_pdf_path,
                     micro_summary=micro_summary,
                 )
                 successful_papers.append(
@@ -413,15 +421,13 @@ def _run_announcement_day(
 
         for processed_paper in successful_papers:
             identity = derive_identity(processed_paper.paper)
-            state_store.save_paper_record(
-                paper_key=identity.paper_key,
-                source_id=identity.source_id,
-                title=processed_paper.paper.title,
-                published=processed_paper.paper.published.isoformat(),
-                filename_stem=identity.filename_stem,
+            _save_paper_status(
+                state_store,
+                paper=processed_paper.paper,
+                identity=identity,
                 status="completed",
-                note_path=str(processed_paper.note_path),
-                pdf_path=str(processed_paper.pdf_path) if processed_paper.pdf_path is not None else None,
+                note_path=processed_paper.note_path,
+                pdf_path=processed_paper.pdf_path,
                 micro_summary=processed_paper.micro_summary,
             )
             run_summary["completed_keys"].append(identity.paper_key)
