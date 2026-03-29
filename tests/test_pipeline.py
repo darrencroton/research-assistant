@@ -324,7 +324,7 @@ def test_pipeline_skips_weekend_note_dates_when_backfilling_automatic_runs(tmp_p
 def test_pipeline_backfill_leaves_current_weekly_summary_unchanged(tmp_path: Path, monkeypatch) -> None:
     config = make_app_config(tmp_path)
     manager = NoteManager(config)
-    manager.bootstrap()
+    manager.bootstrap(reference_date=date(2026, 3, 23))
     manager.weekly_note_path.write_text(
         "# ARXIV PAPERS FOR THE WEEK 16th - 20th March 2026\n\n"
         "## SYNTHESIS\n"
@@ -381,7 +381,7 @@ def test_pipeline_backfill_renders_daily_template_for_target_date(tmp_path: Path
 def test_pipeline_regenerates_weekly_synthesis_from_full_week_context(tmp_path: Path, monkeypatch) -> None:
     config = make_app_config(tmp_path)
     manager = NoteManager(config)
-    manager.bootstrap()
+    manager.bootstrap(reference_date=date(2026, 3, 25))
     manager.weekly_note_path.write_text(
         "# ARXIV PAPERS FOR THE WEEK 23rd - 27th March 2026\n\n"
         "## SYNTHESIS\n\n"

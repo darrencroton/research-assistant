@@ -1,6 +1,8 @@
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
+import arxiv
+
 from re_ass.arxiv_fetcher import ArxivFetcher
 from re_ass.models import PreferenceConfig
 
@@ -19,6 +21,33 @@ def _listing_html(*, heading: str, ids: list[str]) -> str:
         )
     joined = "\n".join(blocks)
     return f"<div id='dlpage'><dl id='articles'><h3>{heading}</h3>{joined}</dl></div>"
+
+
+def _abstract_html(
+    *,
+    source_id: str,
+    title: str,
+    authors: tuple[str, ...],
+    abstract: str,
+    citation_date: str = "2026/03/24",
+    primary_subject: str = "Artificial Intelligence (cs.AI)",
+    subjects: str = "Artificial Intelligence (cs.AI); Computation and Language (cs.CL)",
+) -> str:
+    authors_meta = "".join(f'<meta name="citation_author" content="{author}" />' for author in authors)
+    return (
+        "<html><head>"
+        f'<meta name="citation_title" content="{title}" />'
+        f"{authors_meta}"
+        f'<meta name="citation_date" content="{citation_date}" />'
+        f'<meta name="citation_arxiv_id" content="{source_id}" />'
+        f'<meta name="citation_abstract" content="{abstract}" />'
+        "</head><body>"
+        '<div class="dateline">[Submitted on 24 Mar 2026]</div>'
+        '<table><tr><td class="tablecell subjects">'
+        f'<span class="primary-subject">{primary_subject}</span>; {subjects.removeprefix(primary_subject + "; ")}'
+        "</td></tr></table>"
+        "</body></html>"
+    )
 
 
 def test_available_announcement_dates_unions_configured_categories() -> None:
@@ -184,3 +213,82 @@ def test_collect_candidates_raises_for_announcement_date_outside_visible_listing
         assert "2026-03-25" in str(error)
     else:
         raise AssertionError("Expected collect_candidates to reject an unavailable announcement date.")
+
+
+def test_collect_candidates_falls_back_to_abstract_pages_on_export_api_429() -> None:
+    announcement_day = date(2026, 3, 24)
+    listing_html_by_category = {
+        "cs.AI": _listing_html(heading="Tue, 24 Mar 2026 (showing 2 of 2 entries )", ids=["2603.10021", "2603.10022"]),
+        "cs.CL": _listing_html(heading="Tue, 24 Mar 2026 (showing 2 of 2 entries )", ids=["2603.10022", "2603.10023"]),
+    }
+    abstract_html_by_id = {
+        "2603.10021": _abstract_html(
+            source_id="2603.10021",
+            title="Fallback One",
+            authors=("Test Author",),
+            abstract="Fallback abstract one.",
+        ),
+        "2603.10022": _abstract_html(
+            source_id="2603.10022",
+            title="Fallback Two",
+            authors=("Author Two",),
+            abstract="Fallback abstract two.",
+            primary_subject="Computation and Language (cs.CL)",
+            subjects="Computation and Language (cs.CL)",
+        ),
+        "2603.10023": _abstract_html(
+            source_id="2603.10023",
+            title="Fallback Three",
+            authors=("Author Three",),
+            abstract="Fallback abstract three.",
+        ),
+    }
+
+    class FailingClient:
+        def __init__(self) -> None:
+            self.searches = []
+
+        def results(self, search: object):
+            self.searches.append(search)
+            raise arxiv.HTTPError("https://export.arxiv.org/api/query?id_list=2603.10021", 0, 429)
+
+    client = FailingClient()
+    fetcher = ArxivFetcher(
+        page_size=10,
+        client=client,
+        listing_fetcher=lambda category: listing_html_by_category[category],
+        abstract_fetcher=lambda source_id: abstract_html_by_id[source_id],
+    )
+
+    papers = fetcher.collect_candidates(
+        PreferenceConfig(priorities=("Agents",), categories=("cs.AI", "cs.CL")),
+        announcement_date=announcement_day,
+    )
+
+    assert [paper.title for paper in papers] == ["Fallback One", "Fallback Two", "Fallback Three"]
+    assert papers[0].summary == "Fallback abstract one."
+    assert papers[1].primary_category == "cs.CL"
+    assert papers[2].categories == ("cs.AI", "cs.CL")
+    assert client.searches[0].id_list == ["2603.10021", "2603.10022", "2603.10023"]
+
+
+def test_collect_candidates_reraises_non_429_export_errors() -> None:
+    fetcher = ArxivFetcher(
+        page_size=10,
+        client=SimpleNamespace(results=lambda _search: (_ for _ in ()).throw(arxiv.HTTPError("https://export.arxiv.org/api/query", 0, 500))),
+        listing_fetcher=lambda _category: _listing_html(
+            heading="Tue, 24 Mar 2026 (showing 1 of 1 entries )",
+            ids=["2603.10050"],
+        ),
+        abstract_fetcher=lambda _source_id: (_ for _ in ()).throw(AssertionError("Fallback should not be used")),
+    )
+
+    try:
+        fetcher.collect_candidates(
+            PreferenceConfig(priorities=("Agents",), categories=("cs.AI",)),
+            announcement_date=date(2026, 3, 24),
+        )
+    except arxiv.HTTPError as error:
+        assert error.status == 500
+    else:
+        raise AssertionError("Expected non-429 export errors to propagate.")

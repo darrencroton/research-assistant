@@ -54,7 +54,7 @@ def test_update_daily_note_preserves_content_outside_managed_marker(tmp_path: Pa
 
 def test_update_weekly_note_replaces_same_day_section(tmp_path: Path) -> None:
     manager = NoteManager(make_app_config(tmp_path))
-    manager.bootstrap()
+    manager.bootstrap(reference_date=date(2026, 3, 24))
 
     manager.update_weekly_note(date(2026, 3, 24), [make_processed_paper(tmp_path, micro_summary="First summary.")], "Fresh synthesis.")
     manager.update_weekly_note(date(2026, 3, 24), [make_processed_paper(tmp_path, micro_summary="Second summary.")], "Updated synthesis.")
@@ -71,7 +71,7 @@ def test_update_weekly_note_replaces_same_day_section(tmp_path: Path) -> None:
 
 def test_update_weekly_note_appends_other_papers_of_interest_inside_day_block(tmp_path: Path) -> None:
     manager = NoteManager(make_app_config(tmp_path))
-    manager.bootstrap()
+    manager.bootstrap(reference_date=date(2026, 3, 24))
     summarized = make_processed_paper(tmp_path, micro_summary="First summary.")
     interest = make_paper(
         arxiv_id="2603.22222",
@@ -281,7 +281,7 @@ def test_update_notes_uses_configured_managed_headings(tmp_path: Path) -> None:
         "# ARXIV PAPERS FOR THE WEEK\n\n## Weekly Synthesis\n\n---\n## Weekly Additions\n",
         encoding="utf-8",
     )
-    manager.bootstrap()
+    manager.bootstrap(reference_date=date(2026, 3, 23))
 
     paper = make_processed_paper(tmp_path, micro_summary="Custom heading summary.")
     manager.update_daily_note(date(2026, 3, 23), paper)
