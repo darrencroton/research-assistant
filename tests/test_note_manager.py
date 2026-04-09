@@ -44,8 +44,8 @@ def test_update_daily_note_preserves_content_outside_managed_marker(tmp_path: Pa
     assert "Intro" in daily_text
     assert "Footer" in daily_text
     assert "**Title:**" in daily_text
-    assert "**Authors:** Bayer M. & Doe J." in daily_text
-    assert "\n**Summary:** First summary." in daily_text
+    assert "**Authors:**" not in daily_text
+    assert "\n\n**Summary:** First summary." in daily_text
     assert "\n\n[[this-weeks-arxiv-papers|See all of this week's arXiv papers]]" in daily_text
     assert "**Summary:** First summary." in daily_text
     assert "## TASKS" in daily_text
@@ -110,7 +110,7 @@ def test_featured_entries_use_same_truncated_author_rules_as_other_papers(tmp_pa
     daily_text = (manager.config.daily_notes_dir / "2026-03-24.md").read_text(encoding="utf-8")
     weekly_text = manager.weekly_note_path.read_text(encoding="utf-8")
 
-    assert "**Authors:** Lebowitz S. et al." in daily_text
+    assert "**Authors:**" not in daily_text
     assert "**Authors:** Lebowitz S. et al." in weekly_text
 
 

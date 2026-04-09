@@ -506,13 +506,17 @@ class NoteManager:
             template = self.config.daily_template.read_text(encoding="utf-8")
             text = _render_daily_template(template, note_date)
 
+        link = render_link(
+            top_paper.filename_stem,
+            top_paper.paper.title,
+            style=self.config.link_style,
+            from_subdir="daily-notes",
+        )
         block = "\n".join(
             [
-                _featured_entry(
-                    top_paper,
-                    link_style=self.config.link_style,
-                    from_subdir="daily-notes",
-                ),
+                f"**Title:** {link}",
+                "",
+                f"**Summary:** {top_paper.micro_summary}",
                 "",
                 self._weekly_note_link(note_date, reference_date),
             ]
