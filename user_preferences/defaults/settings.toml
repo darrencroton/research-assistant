@@ -34,16 +34,16 @@ weekly_synthesis_word_limit_start = 100
 weekly_synthesis_word_limit_end = 200
 
 [arxiv]
-always_summarize_score = 90
-min_selection_score = 70
-max_papers = 3
+always_summarize_score = 85
+min_selection_score = 65
+max_papers = 1
 page_size = 100
 
 [llm]
 mode = "cli"
-provider = "claude"
+provider = "copilot"
 model = ""
-effort = ""
+effort = "high"
 timeout_seconds = 900
 max_output_tokens = 12288
 temperature = 0.2
