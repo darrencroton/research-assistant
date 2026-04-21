@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
 
+from re_ass.llm_retry import is_retryable_llm_error
 from re_ass.models import ArxivPaper
 from re_ass.settings import LlmConfig
 
@@ -448,22 +449,6 @@ def write_debug_prompt(prompt_path: Path, system_prompt: str, user_prompt: str) 
         LOGGER.warning("Could not write debug prompt file: %s", error)
 
 
-def _is_retryable_llm_error(error: Exception) -> bool:
-    message = str(error).lower()
-    non_retryable_markers = (
-        "credit balance is too low",
-        "api key",
-        "authentication",
-        "logged out",
-        "login required",
-        "not logged in",
-        "not authenticated",
-        "no authentication information found",
-        "not found on path",
-    )
-    return not any(marker in message for marker in non_retryable_markers)
-
-
 def call_llm_with_retry(
     provider: Provider,
     content: bytes | str,
@@ -497,7 +482,7 @@ def call_llm_with_retry(
                 provider.__class__.__name__,
                 error,
             )
-            if not _is_retryable_llm_error(error) or attempt == max_retries - 1:
+            if not is_retryable_llm_error(error) or attempt == max_retries - 1:
                 break
             wait_time = 2 ** (attempt + 1)
             LOGGER.info("Waiting %ss before retry...", wait_time)

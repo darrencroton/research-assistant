@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import logging
+import time
 from typing import Any
 
+from re_ass.llm_retry import is_retryable_llm_error
 from re_ass.models import ArxivPaper, PreferenceConfig
 from re_ass.paper_identity import derive_identity
 from re_ass.paper_summariser.providers.base import Provider
@@ -14,6 +16,7 @@ from re_ass.settings import LlmConfig
 
 
 LOGGER = logging.getLogger(__name__)
+_RANKING_RETRY_WAIT_SECONDS = 2
 
 
 class RankingError(RuntimeError):
@@ -388,18 +391,7 @@ class PaperRanker:
             )
 
         dual_match_required = _requires_dual_match(preferences)
-        system_prompt = _ranking_system_prompt()
-        user_prompt = _ranking_user_prompt(preferences, candidates)
-        try:
-            response = self.provider.process_document(
-                content="",
-                is_pdf=False,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                max_tokens=self.config.max_output_tokens,
-            ).strip()
-        except Exception as error:
-            raise RankingError(f"Ranking provider call failed: {error}") from error
+        response = self._request_ranking_response(preferences, candidates)
 
         try:
             ranked = _parse_ranked_payload(
@@ -457,6 +449,40 @@ class PaperRanker:
             selected=selected,
             weekly_interest=weekly_interest,
         )
+
+    def _request_ranking_response(
+        self,
+        preferences: PreferenceConfig,
+        candidates: list[ArxivPaper],
+    ) -> str:
+        system_prompt = _ranking_system_prompt()
+        user_prompt = _ranking_user_prompt(preferences, candidates)
+        max_attempts = min(2, max(1, self.config.retry_attempts))
+        last_error: Exception | None = None
+
+        for attempt in range(max_attempts):
+            try:
+                return self.provider.process_document(
+                    content="",
+                    is_pdf=False,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    max_tokens=self.config.max_output_tokens,
+                ).strip()
+            except Exception as error:
+                last_error = error
+                if not is_retryable_llm_error(error) or attempt == max_attempts - 1:
+                    break
+                LOGGER.warning(
+                    "Ranking provider call failed on attempt %s/%s; retrying in %ss: %s",
+                    attempt + 1,
+                    max_attempts,
+                    _RANKING_RETRY_WAIT_SECONDS,
+                    error,
+                )
+                time.sleep(_RANKING_RETRY_WAIT_SECONDS)
+
+        raise RankingError(f"Ranking provider call failed: {last_error}") from last_error
 
     def _repair_ranking_payload(
         self,

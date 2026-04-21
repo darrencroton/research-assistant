@@ -27,6 +27,22 @@ class RecordingProvider:
         return self.responses.pop(0)
 
 
+class FlakyProvider:
+    def __init__(self, responses: list[object]) -> None:
+        self.responses = list(responses)
+        self.calls = 0
+
+    def process_document(self, content, is_pdf, system_prompt, user_prompt, max_tokens=12288):
+        del content, is_pdf, system_prompt, user_prompt, max_tokens
+        self.calls += 1
+        if not self.responses:
+            raise AssertionError("provider was called more times than expected")
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
 def _preferences(*priorities: str) -> PreferenceConfig:
     return PreferenceConfig(
         priorities=priorities,
@@ -368,3 +384,54 @@ def test_ranker_requires_full_ranked_list_after_repair(tmp_path) -> None:
     with pytest.raises(RankingError, match="remained invalid after repair attempt"):
         ranker.rank_papers(_preferences("Agents"), [paper])
     assert len(provider.calls) == 2
+
+
+def test_ranker_retries_once_after_retryable_provider_failure(tmp_path, monkeypatch) -> None:
+    paper = make_paper(arxiv_id="2603.40091", title="Retryable Ranking")
+    provider = FlakyProvider(
+        [
+            RuntimeError("copilot timed out after 1200s"),
+            json.dumps(
+                {
+                    "ranked_papers": [
+                        {"candidate_id": "arxiv:2603.40091", "score": 92, "rationale": "Recovered after a retry."}
+                    ]
+                }
+            ),
+        ]
+    )
+    ranker = PaperRanker(
+        provider=provider,
+        config=make_app_config(tmp_path).llm,
+        max_papers=3,
+        always_summarize_score=90.0,
+        min_selection_score=80.0,
+    )
+    sleep_calls: list[int] = []
+    monkeypatch.setattr("re_ass.ranking.time.sleep", lambda seconds: sleep_calls.append(seconds))
+
+    selection = ranker.rank_papers(_preferences("Agents"), [paper])
+
+    assert [item.paper.title for item in selection.selected] == ["Retryable Ranking"]
+    assert provider.calls == 2
+    assert sleep_calls == [2]
+
+
+def test_ranker_does_not_retry_non_retryable_provider_failure(tmp_path, monkeypatch) -> None:
+    paper = make_paper(arxiv_id="2603.40092", title="Auth Failure")
+    provider = FlakyProvider([RuntimeError("copilot authentication failed")])
+    ranker = PaperRanker(
+        provider=provider,
+        config=make_app_config(tmp_path).llm,
+        max_papers=3,
+        always_summarize_score=90.0,
+        min_selection_score=80.0,
+    )
+    sleep_calls: list[int] = []
+    monkeypatch.setattr("re_ass.ranking.time.sleep", lambda seconds: sleep_calls.append(seconds))
+
+    with pytest.raises(RankingError, match="authentication failed"):
+        ranker.rank_papers(_preferences("Agents"), [paper])
+
+    assert provider.calls == 1
+    assert sleep_calls == []

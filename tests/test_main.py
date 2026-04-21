@@ -1,3 +1,4 @@
+import logging
 import runpy
 import sys
 from pathlib import Path
@@ -78,6 +79,20 @@ def test_cli_writes_run_boundary_markers_to_log_files(tmp_path: Path, monkeypatc
     assert expected_start in history_text
     assert expected_finish in history_text
     assert history_text.endswith("\n\n")
+
+
+def test_configure_logging_routes_info_to_stdout_and_errors_to_stderr(capsys) -> None:
+    main.configure_logging()
+
+    logging.info("info-message")
+    logging.warning("warning-message")
+
+    captured = capsys.readouterr()
+
+    assert "info-message" in captured.out
+    assert "warning-message" not in captured.out
+    assert "warning-message" in captured.err
+    assert "info-message" not in captured.err
 
 
 def test___main___raises_system_exit_with_cli_result(monkeypatch) -> None:
