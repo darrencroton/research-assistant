@@ -6,11 +6,23 @@ import argparse
 from datetime import date
 import logging
 from pathlib import Path
+import sys
 
 from re_ass.settings import AppConfig, load_config
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+class _MaxLevelFilter(logging.Filter):
+    """Allow records up to and including a maximum level."""
+
+    def __init__(self, max_level: int) -> None:
+        super().__init__()
+        self.max_level = max_level
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno <= self.max_level
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,7 +45,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def configure_logging(config: AppConfig | None = None) -> None:
     """Set up console and optional file logging."""
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(logging.INFO)
+    stdout_handler.addFilter(_MaxLevelFilter(logging.INFO))
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.WARNING)
+
+    handlers: list[logging.Handler] = [stdout_handler, stderr_handler]
 
     if config is not None:
         config.logs_root.mkdir(parents=True, exist_ok=True)

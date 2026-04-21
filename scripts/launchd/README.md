@@ -133,6 +133,8 @@ tail -n 50 logs/launchd.stdout.log
 tail -n 50 logs/launchd.stderr.log
 ```
 
+`re-ass` writes normal application logs at `INFO` level to `launchd.stdout.log`, and warnings or errors to `launchd.stderr.log`. Third-party tools may still write directly to either stream.
+
 `re-ass` also writes run diagnostics under:
 
 ```text
