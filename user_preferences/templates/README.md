@@ -111,7 +111,7 @@ The `---` separator is optional, but the built-in template uses it and it reads 
 `re-ass` writes:
 
 - a link to the top paper note
-- the micro-summary for that paper
+- the micro-summary for that paper with a trailing arXiv link
 - a link back to the matching weekly note for that day, which may be the live weekly note or a weekly archive during catch-up
 
 ### Weekly note synthesis
@@ -130,7 +130,7 @@ Only fully summarised papers are included in the synthesis input. Weekly overflo
 
 **Title:** [[paper-note]]
 
-**Summary:** Short summary here.
+**Summary:** Short summary here. [arXiv:2603.12345](https://arxiv.org/abs/2603.12345)
 
 **Other papers of interest:**
 

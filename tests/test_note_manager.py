@@ -45,9 +45,9 @@ def test_update_daily_note_preserves_content_outside_managed_marker(tmp_path: Pa
     assert "Footer" in daily_text
     assert "**Title:**" in daily_text
     assert "**Authors:**" not in daily_text
-    assert "\n\n**Summary:** First summary." in daily_text
+    assert "\n\n**Summary:** First summary. [arXiv:2603.15732](https://arxiv.org/abs/2603.15732)" in daily_text
     assert "\n\n[[this-weeks-arxiv-papers|See all of this week's arXiv papers]]" in daily_text
-    assert "**Summary:** First summary." in daily_text
+    assert "**Summary:** First summary. [arXiv:2603.15732](https://arxiv.org/abs/2603.15732)" in daily_text
     assert "## TASKS" in daily_text
     assert "First summary." in daily_text
 
@@ -65,7 +65,7 @@ def test_update_weekly_note_replaces_same_day_section(tmp_path: Path) -> None:
     assert weekly_text.count("### Tuesday 24th") == 1
     assert weekly_text.count("**Title:**") == 1
     assert "**Authors:** Bayer M. & Doe J." in weekly_text
-    assert "\n**Summary:** Second summary." in weekly_text
+    assert "\n**Summary:** Second summary. [arXiv:2603.15732](https://arxiv.org/abs/2603.15732)" in weekly_text
     assert "Updated synthesis." in weekly_text
     assert "Second summary." in weekly_text
 
@@ -91,7 +91,10 @@ def test_update_weekly_note_appends_other_papers_of_interest_inside_day_block(tm
     assert "### Tuesday 24th" in weekly_text
     assert "\n\n**Other papers of interest:**\n\n" in weekly_text
     assert "- *Interesting Overflow Paper*, Wang K. & Peng Y., [arXiv:2603.22222](https://arxiv.org/abs/2603.22222)" in weekly_text
-    assert "**Summary:** First summary.\n\n**Other papers of interest:**" in weekly_text
+    assert (
+        "**Summary:** First summary. [arXiv:2603.15732](https://arxiv.org/abs/2603.15732)\n\n"
+        "**Other papers of interest:**"
+    ) in weekly_text
 
 
 def test_featured_entries_use_same_truncated_author_rules_as_other_papers(tmp_path: Path) -> None:
@@ -111,7 +114,9 @@ def test_featured_entries_use_same_truncated_author_rules_as_other_papers(tmp_pa
     weekly_text = manager.weekly_note_path.read_text(encoding="utf-8")
 
     assert "**Authors:**" not in daily_text
+    assert "**Summary:** Featured summary. [arXiv:2603.33333](https://arxiv.org/abs/2603.33333)" in daily_text
     assert "**Authors:** Lebowitz S. et al." in weekly_text
+    assert "**Summary:** Featured summary. [arXiv:2603.33333](https://arxiv.org/abs/2603.33333)" in weekly_text
 
 
 def test_update_daily_note_appends_block_when_heading_is_missing(tmp_path: Path) -> None:
@@ -227,7 +232,7 @@ def test_preview_weekly_additions_merges_new_day_without_writing_file(tmp_path: 
 
     assert "### Monday 23rd" in preview
     assert "### Tuesday 24th" in preview
-    assert "New summary." in preview
+    assert "New summary. [arXiv:2603.15732](https://arxiv.org/abs/2603.15732)" in preview
     weekly_text = manager.weekly_note_path.read_text(encoding="utf-8")
     assert "### Tuesday 24th" not in weekly_text
 
@@ -312,7 +317,7 @@ def test_update_notes_uses_configured_managed_headings(tmp_path: Path) -> None:
     weekly_text = manager.weekly_note_path.read_text(encoding="utf-8")
 
     assert "## Highlighted Paper" in daily_text
-    assert "**Summary:** Custom heading summary." in daily_text
+    assert "**Summary:** Custom heading summary. [arXiv:2603.15732](https://arxiv.org/abs/2603.15732)" in daily_text
     assert "## Weekly Synthesis" in weekly_text
     assert "Custom synthesis." in weekly_text
     assert "## Weekly Additions" in weekly_text

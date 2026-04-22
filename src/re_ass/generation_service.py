@@ -17,6 +17,7 @@ from re_ass.settings import LlmConfig
 LOGGER = logging.getLogger(__name__)
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _WEEKLY_SUMMARY_LINE = re.compile(r"(?m)^\*\*Summary:\*\*\s*(.+?)\s*$")
+_TRAILING_ARXIV_LINK = re.compile(r"\s+\[arXiv:[^\]]+\]\([^)]+\)\s*$")
 _MARKDOWN_LIST_ITEM = re.compile(r"^(?:[-*+]\s+|\d+\.\s+)")
 _MARKDOWN_HEADING = re.compile(r"^#{1,6}\s+")
 
@@ -230,4 +231,9 @@ class GenerationService:
         return "\n".join(output_lines).strip()
 
     def _extract_weekly_micro_summaries(self, weekly_additions: str) -> list[str]:
-        return [match.rstrip(".") for match in _WEEKLY_SUMMARY_LINE.findall(weekly_additions) if match.strip()]
+        summaries: list[str] = []
+        for match in _WEEKLY_SUMMARY_LINE.findall(weekly_additions):
+            cleaned = _TRAILING_ARXIV_LINK.sub("", match).strip().rstrip(".")
+            if cleaned:
+                summaries.append(cleaned)
+        return summaries

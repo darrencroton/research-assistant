@@ -100,11 +100,11 @@ def test_generate_weekly_synthesis_uses_full_weekly_additions_and_word_limit(tmp
     weekly_additions = (
         "### Monday 23rd\n\n"
         "**Title:** [[Paper One]]\n\n"
-        "**Summary:** First summary.\n\n"
+        "**Summary:** First summary. [arXiv:2603.10001](https://arxiv.org/abs/2603.10001)\n\n"
         "---\n\n"
         "### Tuesday 24th\n\n"
         "**Title:** [[Paper Two]]\n\n"
-        "**Summary:** Second summary.\n"
+        "**Summary:** Second summary. [arXiv:2603.10002](https://arxiv.org/abs/2603.10002)\n"
     )
 
     synthesis = service.generate_weekly_synthesis("Earlier synthesis.", weekly_additions, word_limit=150)
@@ -128,11 +128,11 @@ def test_generate_weekly_synthesis_uses_full_weekly_additions_and_word_limit(tmp
                 "Weekly paper additions so far:\n"
                 "### Monday 23rd\n\n"
                 "**Title:** [[Paper One]]\n\n"
-                "**Summary:** First summary.\n\n"
+                "**Summary:** First summary. [arXiv:2603.10001](https://arxiv.org/abs/2603.10001)\n\n"
                 "---\n\n"
                 "### Tuesday 24th\n\n"
                 "**Title:** [[Paper Two]]\n\n"
-                "**Summary:** Second summary.\n"
+                "**Summary:** Second summary. [arXiv:2603.10002](https://arxiv.org/abs/2603.10002)\n"
             ),
             "max_tokens": 768,
         }
@@ -175,10 +175,10 @@ def test_generate_weekly_synthesis_fallback_rebuilds_from_all_weekly_summaries(t
     )
     weekly_additions = (
         "### Monday 23rd\n\n"
-        "**Summary:** First summary.\n\n"
+        "**Summary:** First summary. [arXiv:2603.10001](https://arxiv.org/abs/2603.10001)\n\n"
         "---\n\n"
         "### Tuesday 24th\n\n"
-        "**Summary:** Second summary.\n"
+        "**Summary:** Second summary. [arXiv:2603.10002](https://arxiv.org/abs/2603.10002)\n"
     )
 
     synthesis = service.generate_weekly_synthesis("Stale synthesis.", weekly_additions, word_limit=12)

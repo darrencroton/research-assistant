@@ -149,6 +149,11 @@ def _interest_entry(paper: ArxivPaper) -> str:
     return f"- *{title}*, {authors}, [arXiv:{source_id}]({paper.arxiv_url})"
 
 
+def _arxiv_link(paper: ArxivPaper) -> str:
+    source_id = extract_source_id(paper.entry_id or paper.arxiv_url)
+    return f"[arXiv:{source_id}]({paper.arxiv_url})"
+
+
 def _featured_entry(paper: ProcessedPaper, *, link_style: str, from_subdir: str) -> str:
     return "\n".join(
         [
@@ -157,7 +162,7 @@ def _featured_entry(paper: ProcessedPaper, *, link_style: str, from_subdir: str)
                 f"{render_link(paper.filename_stem, paper.paper.title, style=link_style, from_subdir=from_subdir)}"
             ),
             f"**Authors:** {_short_author_list(paper.paper.authors)}",
-            f"**Summary:** {paper.micro_summary}",
+            f"**Summary:** {paper.micro_summary} {_arxiv_link(paper.paper)}",
         ]
     )
 
@@ -516,7 +521,7 @@ class NoteManager:
             [
                 f"**Title:** {link}",
                 "",
-                f"**Summary:** {top_paper.micro_summary}",
+                f"**Summary:** {top_paper.micro_summary} {_arxiv_link(top_paper.paper)}",
                 "",
                 self._weekly_note_link(note_date, reference_date),
             ]
